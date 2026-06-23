@@ -5,3 +5,6 @@ pydantic-settings
 requests
 gradio_client
 tenacity
+sqlalchemy
+redis
+rq
