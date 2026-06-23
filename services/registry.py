@@ -1,6 +1,6 @@
 from threading import Lock
 from settings.config import settings  
-from services.adapters import HFAdapter, RunPodAdapter, HuggingFaceSpaceAdapter
+from services.adapters import HuggingFaceSpaceAdapter, LetterGenAdapter, EmailGenAdapter, ProofreaderAdapter
 
 # Thread Safety and Cache
 _MODEL_CACHE = {}
@@ -33,16 +33,10 @@ LIVE_TEXT_SPACES = {
         "description": "Paraphrasing"
     },
     "mcq-gen": {
-        "space": "DeffoTech/quiz_generation",
+        "space": "DeffoTech/Tamil_MCQ_Quiz",
         "api": "/process_text",
         "input": "text",
         "description": "MCQ Generator"
-    },
-    "dialogue-gen": {
-        "space": "DeffoTech/tamil_dialogue_generation",
-        "api": "/safe_generate_dialogue",
-        "input": "scene_context",
-        "description": "Dialogue Generator"
     },
     "offensive-detector": {
         "space": "DeffoTech/Tamil-Offensive-Detector-Final",
@@ -51,9 +45,9 @@ LIVE_TEXT_SPACES = {
         "description": "Offensive Content Detection"
     },
     "tongue-twister": {
-        "space": "DeffoTech/Tamil-toungue-twister",
-        "api": "/predict",
-        "input": "text",
+        "space": "DeffoTech/Tamil-Tongue-Twister_final",
+        "api": "/generate_twister_ui",
+        "input": "user_input",
         "description": "Tongue Twister Generator"
     },
     "poem-gen": {
@@ -63,52 +57,71 @@ LIVE_TEXT_SPACES = {
         "description": "Poem Generator"
     },
     "email-gen": {
-        "space": "DeffoTech/Tamil_Email_Generation",
+        "space": "DeffoTech/Letter_Generation",
         "api": "/lambda",
         "input": "text",
         "description": "Email Generator"
+    },
+    "proofreader": {
+        "space": "hxari/tamil-spell-checker",
+        "api": "/check",
+        "input": "word",
+        "description": "Tamil Proofreader"
     }
 }
 
-LEGACY_MODELS = {
-    "ocr": {
-        "type": "file",
-        "description": "Tamil OCR",
-        "builder": lambda: HFAdapter(settings.ocr_endpoint, settings.hf_token)
-    },
-    "voice-clone": {
-        "type": "audio",
-        "description": "Voice Cloning",
-        "builder": lambda: RunPodAdapter(settings.voice_endpoint_id, settings.runpod_key)
-    }
-}
 
 def get_model(model_name: str):
-    with _model_lock:
-        if model_name in _MODEL_CACHE:
-            return _MODEL_CACHE[model_name]
+    # 1. Fast read path (no lock needed for reading in Python)
+    if model_name in _MODEL_CACHE:
+        return _MODEL_CACHE[model_name]
 
-        # HuggingFace Spaces
-        if model_name in LIVE_TEXT_SPACES:
-            config = LIVE_TEXT_SPACES[model_name]
-
+    # 2. Build the adapter outside the lock to avoid blocking other threads
+    adapter = None
+    if model_name in LIVE_TEXT_SPACES:
+        config = LIVE_TEXT_SPACES[model_name]
+        if model_name == "letter-gen":
+            adapter = LetterGenAdapter(config["space"], settings.hf_token)
+        elif model_name == "email-gen":
+            adapter = EmailGenAdapter(config["space"], settings.hf_token)
+        elif model_name == "proofreader":
+            adapter = ProofreaderAdapter(config["space"], settings.hf_token)
+        else:
             adapter = HuggingFaceSpaceAdapter(
-                config["space"],
-                config["api"],
-                settings.hf_token,
-                config["input"]
+                config["space"], config["api"], settings.hf_token, config["input"]
             )
 
-            _MODEL_CACHE[model_name] = adapter
-            return adapter
 
-        # Legacy Models
-        if model_name in LEGACY_MODELS:
-            adapter = LEGACY_MODELS[model_name]["builder"]()
-            _MODEL_CACHE[model_name] = adapter
-            return adapter
+    # 3. Lock only to safely write it to the cache
+    if adapter:
+        with _model_lock:
+            # Double-check in case another thread wrote it while we were building
+            if model_name not in _MODEL_CACHE:
+                _MODEL_CACHE[model_name] = adapter
+            return _MODEL_CACHE[model_name]
 
-        return None
+    return None
+
+# def get_model(model_name: str):
+#     with _model_lock:
+#         if model_name in _MODEL_CACHE:
+#             return _MODEL_CACHE[model_name]
+
+#         # HuggingFace Spaces
+#         if model_name in LIVE_TEXT_SPACES:
+#             config = LIVE_TEXT_SPACES[model_name]
+
+#             adapter = HuggingFaceSpaceAdapter(
+#                 config["space"],
+#                 config["api"],
+#                 settings.hf_token,
+#                 config["input"]
+#             )
+
+#             _MODEL_CACHE[model_name] = adapter
+#             return adapter
+
+#         return None
 
 def list_models():
     models = []
@@ -122,13 +135,6 @@ def list_models():
             "description": config["description"]
         })
 
-    # Legacy
-    for name, config in LEGACY_MODELS.items():
-        models.append({
-            "name": name,
-            "type": config["type"],
-            "source": "custom",
-            "description": config["description"]
-        })
+
 
     return models
