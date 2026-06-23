@@ -4,9 +4,14 @@ from abc import ABC, abstractmethod
 from gradio_client import Client as GradioClient
 from tenacity import retry, stop_after_attempt, wait_fixed
 
+import sys
+from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+
+
 
 # BASE MODEL
 class ModelAdapter(ABC):
@@ -39,12 +44,6 @@ class HuggingFaceSpaceAdapter(ModelAdapter):
             payload = text_input
         else:
             payload = {self.input_param_name: text_input}
-
-        # Dynamic handling for dialogue-gen key mapping (scene -> scene_context)
-        if "tamil_dialogue_generation" in self.space_id.lower():
-            if isinstance(payload, dict):
-                if "scene" in payload and "scene_context" not in payload:
-                    payload["scene_context"] = payload.pop("scene")
 
         # Dynamic handling for poem-gen temperature splitting
         if self.space_id == "DeffoTech/Tamil-Poem-Generator-V6":
@@ -80,34 +79,233 @@ class HuggingFaceSpaceAdapter(ModelAdapter):
             raise RuntimeError(
                 f"HF Space call failed ({self.space_id}): {str(e)}"
             )
-# HUGGING FACE INFERENCE API ADAPTER
-class HFAdapter(ModelAdapter):
-    def __init__(self, endpoint_url: str, token: str):
-        self.url = endpoint_url
+
+
+class LetterGenAdapter(ModelAdapter):
+    def __init__(self, space_id: str, token: str):
+        self.space_id = space_id
+        self.token = token
+
+    def run(self, text_input: Any):
+        is_start = False
+        prompt = ""
+        
+        if isinstance(text_input, str):
+            is_start = True
+            prompt = text_input
+        elif isinstance(text_input, dict):
+            if "session_id" not in text_input:
+                is_start = True
+                prompt = text_input.get("prompt", text_input.get("user_text", text_input.get("input", "")))
+        else:
+            raise ValueError("Invalid request format for letter-gen model.")
+
+        if is_start:
+            try:
+                client = GradioClient(self.space_id, token=self.token)
+                session_id = client.session_hash
+                logger.info(f"[LetterGenAdapter] Created session {session_id} for {self.space_id}")
+                
+                logger.info(f"[LetterGenAdapter] Calling /detect_letter for session {session_id}")
+                res = client.predict(prompt, api_name="/detect_letter")
+                return {
+                    "status": "success",
+                    "step": "start",
+                    "session_id": session_id,
+                    "raw_data": res
+                }
+            except Exception as e:
+                raise RuntimeError(f"Gradio Space detect_letter failed: {str(e)}")
+
+        session_id = text_input.get("session_id")
+        if not session_id:
+            raise ValueError("session_id is required for multi-turn requests.")
+
+        client = GradioClient(self.space_id, token=self.token)
+        client.session_hash = session_id
+
+        action = text_input.get("action", "next")
+
+        if action == "next":
+            answer = text_input.get("answer", "")
+            try:
+                logger.info(f"[LetterGenAdapter] Calling /next_question for session {session_id}")
+                res = client.predict(answer, api_name="/next_question")
+                return {
+                    "status": "success",
+                    "step": "next",
+                    "session_id": session_id,
+                    "raw_data": res
+                }
+            except Exception as e:
+                raise RuntimeError(f"Gradio Space next_question failed: {str(e)}")
+
+        elif action == "prev":
+            try:
+                logger.info(f"[LetterGenAdapter] Calling /prev_question for session {session_id}")
+                res = client.predict(api_name="/prev_question")
+                return {
+                    "status": "success",
+                    "step": "prev",
+                    "session_id": session_id,
+                    "raw_data": res
+                }
+            except Exception as e:
+                raise RuntimeError(f"Gradio Space prev_question failed: {str(e)}")
+
+        elif action == "generate":
+            user_request = text_input.get("user_request", "")
+            answers_json = text_input.get("answers_json", "{}")
+            template_index = float(text_input.get("template_index", 0))
+            
+            try:
+                logger.info(f"[LetterGenAdapter] Calling /generate_letter for session {session_id}")
+                res = client.predict(user_request, answers_json, template_index, api_name="/generate_letter")
+                return {
+                    "status": "success",
+                    "step": "generate",
+                    "raw_data": res
+                }
+            except Exception as e:
+                raise RuntimeError(f"Gradio Space generate_letter failed: {str(e)}")
+
+        else:
+            raise ValueError(f"Unknown action '{action}' for letter-gen model.")
+
+
+class EmailGenAdapter(ModelAdapter):
+    def __init__(self, space_id: str, token: str):
+        self.space_id = space_id
+        self.token = token
+
+    def run(self, text_input: Any):
+        is_start = False
+        prompt = ""
+        
+        if isinstance(text_input, str):
+            is_start = True
+            prompt = text_input
+        elif isinstance(text_input, dict):
+            if "session_id" not in text_input:
+                is_start = True
+                prompt = text_input.get("prompt", text_input.get("user_text", text_input.get("input", text_input.get("user_request", ""))))
+        else:
+            raise ValueError("Invalid request format for email-gen model.")
+
+        if is_start:
+            try:
+                client = GradioClient(self.space_id, token=self.token)
+                session_id = client.session_hash
+                logger.info(f"[EmailGenAdapter] Created session {session_id} for {self.space_id}")
+                
+                logger.info(f"[EmailGenAdapter] Calling /detect_email for session {session_id}")
+                res = client.predict(prompt, api_name="/detect_email")
+                return {
+                    "status": "success",
+                    "step": "start",
+                    "session_id": session_id,
+                    "raw_data": res
+                }
+            except Exception as e:
+                raise RuntimeError(f"Gradio Space detect_email failed: {str(e)}")
+
+        session_id = text_input.get("session_id")
+        if not session_id:
+            raise ValueError("session_id is required for multi-turn requests.")
+
+        client = GradioClient(self.space_id, token=self.token)
+        client.session_hash = session_id
+
+        action = text_input.get("action", "next")
+
+        if action == "next":
+            answer = text_input.get("answer", "")
+            try:
+                logger.info(f"[EmailGenAdapter] Calling /next_question for session {session_id}")
+                res = client.predict(answer, api_name="/next_question")
+                return {
+                    "status": "success",
+                    "step": "next",
+                    "session_id": session_id,
+                    "raw_data": res
+                }
+            except Exception as e:
+                raise RuntimeError(f"Gradio Space next_question failed: {str(e)}")
+
+        elif action == "prev":
+            try:
+                logger.info(f"[EmailGenAdapter] Calling /prev_question for session {session_id}")
+                res = client.predict(api_name="/prev_question")
+                return {
+                    "status": "success",
+                    "step": "prev",
+                    "session_id": session_id,
+                    "raw_data": res
+                }
+            except Exception as e:
+                raise RuntimeError(f"Gradio Space prev_question failed: {str(e)}")
+
+        elif action == "generate":
+            answers_json = text_input.get("answers_json", "{}")
+            
+            try:
+                logger.info(f"[EmailGenAdapter] Calling /generate_email for session {session_id}")
+                res = client.predict(answers_json, api_name="/generate_email")
+                return {
+                    "status": "success",
+                    "step": "generate",
+                    "raw_data": res
+                }
+            except Exception as e:
+                raise RuntimeError(f"Gradio Space generate_email failed: {str(e)}")
+
+        else:
+            raise ValueError(f"Unknown action '{action}' for email-gen model.")
+
+
+class ProofreaderAdapter(ModelAdapter):
+    def __init__(self, space_id: str = "hxari/tamil-spell-checker", token: str = None):
+        self.space_id = space_id
         self.token = token
         
-    def run(self, text_input: str):
-        if self.token == "mock_token" or "mock-ocr" in self.url:
-            return {"simulated_output": f"Processed '{text_input}' using Hugging Face endpoint {self.url}"}
-            
-        headers = {"Authorization": f"Bearer {self.token}"}
-        json_data = {"inputs": text_input}
-        
+        # Subdomain of hxari/tamil-spell-checker is hxari-tamil-spell-checker
+        subdomain = self.space_id.replace("/", "-").lower()
+        self.api_url = f"https://{subdomain}.hf.space/check"
+        logger.info(f"[INIT] ProofreaderAdapter initialized for remote Space: {self.api_url}")
+
+    def run(self, text_input: Any):
+        word = ""
+        if isinstance(text_input, str):
+            word = text_input
+        elif isinstance(text_input, dict):
+            word = text_input.get("word", text_input.get("input", text_input.get("text", "")))
+        else:
+            raise ValueError("Invalid request format for proofreader model.")
+
+        if not word:
+            raise ValueError("Input text cannot be empty.")
+
         try:
-            response = requests.post(self.url, headers=headers, json=json_data, timeout=10)
-            response.raise_for_status() 
-            return response.json()
-        except requests.exceptions.RequestException as e:
-            raise RuntimeError(f"Hugging Face network call failed: {str(e)}")
+            logger.info(f"[PROOFREADER CALL] {self.space_id} → GET {self.api_url}")
+            headers = {}
+            if self.token:
+                headers["Authorization"] = f"Bearer {self.token}"
 
+            response = requests.get(
+                self.api_url,
+                params={"word": word},
+                headers=headers,
+                timeout=30
+            )
+            response.raise_for_status()
+            result = response.json()
 
-#  RUNPOD SERVERLESS ADAPTER
-class RunPodAdapter(ModelAdapter):
-    def __init__(self, endpoint_id: str, api_key: str):
-        self.endpoint_id = endpoint_id
-        self.api_key = api_key
-
-    def run(self, text_input: str):
-        if self.api_key == "mock_key" or self.endpoint_id == "mock-voice-id":
-            return {"simulated_output": f"Processed '{text_input}' using RunPod endpoint {self.endpoint_id}"}
-        return {"status": "success", "message": "RunPod execution complete"}
+            return {
+                "status": "success",
+                "source": "hf-space",
+                "model": self.space_id,
+                "data": result
+            }
+        except Exception as e:
+            logger.exception("Remote proofreader space call failed")
+            raise RuntimeError(f"Remote proofreader space call failed ({self.space_id}): {str(e)}")
