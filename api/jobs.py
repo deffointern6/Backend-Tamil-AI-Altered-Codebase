@@ -1,13 +1,22 @@
 import logging
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, model_validator
-from services.registry import get_model
-from utils.hf_parser import parse_model_output
-
+from redis import Redis
+from rq import Queue
+from settings.config import settings
+from database.jobs import create_job, get_job
+from database.db import get_db
+from sqlalchemy.orm import Session
+from services.registry import LIVE_TEXT_SPACES
 from typing import Any
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/jobs", tags=["Jobs"])
+
+# Setup Redis connection and RQ Queue
+redis_url = settings.redis_url if settings.redis_url else "redis://localhost:6379/0"
+redis_conn = Redis.from_url(redis_url)
+queue = Queue("default", connection=redis_conn)
 
 
 # --- REQUEST MODELS ---
@@ -28,36 +37,45 @@ class JobRequest(BaseModel):
 
 # --- POST ROUTE ---
 @router.post("")
-def run_model(request: JobRequest):
-    logger.info(f"[JOB START] Running model '{request.model}'")
-    
-    try:
-        adapter = get_model(request.model)
-    except Exception as e:
-        logger.exception(f"Failed to load model '{request.model}' from registry")
-        raise HTTPException(status_code=503, detail=f"Model initialization failed: {str(e)}")
+def run_model(request: JobRequest, db: Session = Depends(get_db)):
+    logger.info(f"[JOB SUBMIT] Received request for model '{request.model}'")
 
-    if not adapter:
-        logger.warning(f"Model '{request.model}' requested but not found in registry")
+    # Validate model exists in registry
+    if request.model not in LIVE_TEXT_SPACES:
+        logger.warning(f"[JOB SUBMIT] Model '{request.model}' not found in registry.")
         raise HTTPException(status_code=404, detail=f"Model '{request.model}' not found")
 
     try:
-        raw = adapter.run(request.input)
+        # Create job record in DB
+        job_id = create_job(user_id="test-user", model=request.model, input_data=request.input, db=db)
+        logger.info(f"[JOB SUBMIT] Created job {job_id} in database (status: queued)")
+
+        # Enqueue job to Redis Queue
+        # We pass task as string "worker.run_job" to avoid circular imports in RQ worker/API threads
+        queue.enqueue("worker.run_job", job_id, job_timeout=600)
+        logger.info(f"[JOB SUBMIT] Enqueued job {job_id} into Redis queue.")
+
+        return {
+            "job_id": job_id,
+            "status": "queued"
+        }
     except Exception as e:
-        logger.exception(f"Adapter run execution failed for model '{request.model}'")
-        raise HTTPException(status_code=502, detail=f"Adapter run failed: {str(e)}")
+        logger.exception(f"[JOB SUBMIT] Failed to submit job: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to submit job: {str(e)}")
 
-    # Delegate output cleaning to the centralized dispatcher
-    cleaned = parse_model_output(request.model, raw)
 
-    # If parsing encountered a structural issue, send an appropriate validation error status
-    if isinstance(cleaned, dict) and "error" in cleaned:
-        logger.error(f"Response cleaning failed for model '{request.model}': {cleaned['error']}")
-        raise HTTPException(status_code=422, detail=cleaned)
+# --- GET ROUTE ---
+@router.get("/{job_id}")
+def get_job_status(job_id: str, db: Session = Depends(get_db)):
+    logger.info(f"[JOB STATUS] Checking status for job {job_id}")
+    job = get_job(job_id, db=db)
+    if not job:
+        logger.warning(f"[JOB STATUS] Job {job_id} not found in database.")
+        raise HTTPException(status_code=404, detail="Job not found")
 
-    logger.info(f"[JOB DONE] Successfully processed request for model '{request.model}'")
     return {
-        "status": "done",
-        "model": request.model,
-        "result": cleaned
+        "job_id": job.id,
+        "status": job.status,
+        "result": job.result,
+        "error": job.error
     }
