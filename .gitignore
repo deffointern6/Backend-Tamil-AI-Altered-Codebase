@@ -14,6 +14,7 @@ dist/
 
 # Logs
 *.log
+metrics.jsonl
 
 # Environment variables
 .env
