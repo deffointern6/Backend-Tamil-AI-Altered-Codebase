@@ -13,10 +13,11 @@ from typing import Any
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/jobs", tags=["Jobs"])
 
-# Setup Redis connection and RQ Queue
+# Setup Redis connection and RQ Queues
 redis_url = settings.redis_url if settings.redis_url else "redis://localhost:6379/0"
 redis_conn = Redis.from_url(redis_url)
-queue = Queue("default", connection=redis_conn)
+high_queue = Queue("high", connection=redis_conn)
+default_queue = Queue("default", connection=redis_conn)
 
 
 # --- REQUEST MODELS ---
@@ -52,8 +53,10 @@ def run_model(request: JobRequest, db: Session = Depends(get_db)):
 
         # Enqueue job to Redis Queue
         # We pass task as string "worker.run_job" to avoid circular imports in RQ worker/API threads
-        queue.enqueue("worker.run_job", job_id, job_timeout=600)
-        logger.info(f"[JOB SUBMIT] Enqueued job {job_id} into Redis queue.")
+        import time
+        target_queue = high_queue if request.model in ["proofreader", "tongue-twister"] else default_queue
+        target_queue.enqueue("worker.run_job", job_id, time.time(), job_timeout=600)
+        logger.info(f"[JOB SUBMIT] Enqueued job {job_id} into '{target_queue.name}' Redis queue.")
 
         return {
             "job_id": job_id,
