@@ -85,6 +85,13 @@ class LetterGenAdapter(ModelAdapter):
     def __init__(self, space_id: str, token: str):
         self.space_id = space_id
         self.token = token
+        self._client = None
+
+    @property
+    def client(self):
+        if self._client is None:
+            self._client = GradioClient(self.space_id, token=self.token)
+        return self._client
 
     def run(self, text_input: Any):
         is_start = False
@@ -100,9 +107,10 @@ class LetterGenAdapter(ModelAdapter):
         else:
             raise ValueError("Invalid request format for letter-gen model.")
 
+        client = self.client
+
         if is_start:
             try:
-                client = GradioClient(self.space_id, token=self.token)
                 session_id = client.session_hash
                 logger.info(f"[LetterGenAdapter] Created session {session_id} for {self.space_id}")
                 
@@ -121,7 +129,6 @@ class LetterGenAdapter(ModelAdapter):
         if not session_id:
             raise ValueError("session_id is required for multi-turn requests.")
 
-        client = GradioClient(self.space_id, token=self.token)
         client.session_hash = session_id
 
         action = text_input.get("action", "next")
@@ -177,6 +184,13 @@ class EmailGenAdapter(ModelAdapter):
     def __init__(self, space_id: str, token: str):
         self.space_id = space_id
         self.token = token
+        self._client = None
+
+    @property
+    def client(self):
+        if self._client is None:
+            self._client = GradioClient(self.space_id, token=self.token)
+        return self._client
 
     def run(self, text_input: Any):
         is_start = False
@@ -192,9 +206,10 @@ class EmailGenAdapter(ModelAdapter):
         else:
             raise ValueError("Invalid request format for email-gen model.")
 
+        client = self.client
+
         if is_start:
             try:
-                client = GradioClient(self.space_id, token=self.token)
                 session_id = client.session_hash
                 logger.info(f"[EmailGenAdapter] Created session {session_id} for {self.space_id}")
                 
@@ -213,7 +228,6 @@ class EmailGenAdapter(ModelAdapter):
         if not session_id:
             raise ValueError("session_id is required for multi-turn requests.")
 
-        client = GradioClient(self.space_id, token=self.token)
         client.session_hash = session_id
 
         action = text_input.get("action", "next")

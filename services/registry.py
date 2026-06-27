@@ -14,18 +14,6 @@ LIVE_TEXT_SPACES = {
         "input": "user_request",
         "description": "Tamil Letter Generation"
     },
-    "sentiment": {
-        "space": "DeffoTech/Amil-Sentiment-Analyzer",
-        "api": "/predict",
-        "input": "text",
-        "description": "Tamil Sentiment Analyzer"
-    },
-    "keyword": {
-        "space": "DeffoTech/Tamil-Keyword-Extractor",
-        "api": "/extract_keywords_ui",
-        "input": "raw_input_text",
-        "description": "Keyword Extraction"
-    },
     "paraphrase-gen": {
         "space": "DeffoTech/Tamil-Paraphrase-AI",
         "api": "/generate_paraphrase",
@@ -37,12 +25,6 @@ LIVE_TEXT_SPACES = {
         "api": "/process_text",
         "input": "text",
         "description": "MCQ Generator"
-    },
-    "offensive-detector": {
-        "space": "DeffoTech/Tamil-Offensive-Detector-Final",
-        "api": "/moderate",
-        "input": "text",
-        "description": "Offensive Content Detection"
     },
     "tongue-twister": {
         "space": "DeffoTech/Tamil-Tongue-Twister_final",
@@ -57,7 +39,7 @@ LIVE_TEXT_SPACES = {
         "description": "Poem Generator"
     },
     "email-gen": {
-        "space": "DeffoTech/Letter_Generation",
+        "space": "DeffoTech/Tamil_Email_Generation",
         "api": "/lambda",
         "input": "text",
         "description": "Email Generator"
@@ -102,26 +84,6 @@ def get_model(model_name: str):
 
     return None
 
-# def get_model(model_name: str):
-#     with _model_lock:
-#         if model_name in _MODEL_CACHE:
-#             return _MODEL_CACHE[model_name]
-
-#         # HuggingFace Spaces
-#         if model_name in LIVE_TEXT_SPACES:
-#             config = LIVE_TEXT_SPACES[model_name]
-
-#             adapter = HuggingFaceSpaceAdapter(
-#                 config["space"],
-#                 config["api"],
-#                 settings.hf_token,
-#                 config["input"]
-#             )
-
-#             _MODEL_CACHE[model_name] = adapter
-#             return adapter
-
-#         return None
 
 def list_models():
     models = []
