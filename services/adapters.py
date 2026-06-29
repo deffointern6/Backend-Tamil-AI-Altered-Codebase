@@ -26,7 +26,12 @@ class HuggingFaceSpaceAdapter(ModelAdapter):
         self.input_param_name = input_param_name
 
         try:
-            self.client = GradioClient(self.space_id, token=token)
+            # gradio_client's default httpx timeout (~5s) is too short for HF
+            # Spaces that are asleep/cold-starting; extend it so init survives
+            # the wake-up/JWT round trip instead of raising ReadTimeout.
+            self.client = GradioClient(
+                self.space_id, token=token, httpx_kwargs={"timeout": 60}
+            )
             logger.info(f"[INIT] HF Space client initialized: {space_id}")
         except Exception as e:
             logger.exception("Failed to initialize HF Space client")
@@ -90,7 +95,9 @@ class LetterGenAdapter(ModelAdapter):
     @property
     def client(self):
         if self._client is None:
-            self._client = GradioClient(self.space_id, token=self.token)
+            self._client = GradioClient(
+                self.space_id, token=self.token, httpx_kwargs={"timeout": 60}
+            )
         return self._client
 
     def run(self, text_input: Any):
@@ -189,7 +196,9 @@ class EmailGenAdapter(ModelAdapter):
     @property
     def client(self):
         if self._client is None:
-            self._client = GradioClient(self.space_id, token=self.token)
+            self._client = GradioClient(
+                self.space_id, token=self.token, httpx_kwargs={"timeout": 60}
+            )
         return self._client
 
     def run(self, text_input: Any):
