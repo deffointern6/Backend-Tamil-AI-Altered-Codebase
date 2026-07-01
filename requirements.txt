@@ -8,3 +8,6 @@ tenacity
 sqlalchemy
 redis
 rq
+PyJWT
+bcrypt
+python-multipart
