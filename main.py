@@ -4,18 +4,25 @@ from services.registry import list_models
 from api.jobs import router as jobs_router
 from api.testing import router as testing_router
 from api.metrics import router as metrics_router
+from api.auth import router as auth_router
+from middleware.auth_middleware import AuthMiddleware
+
+from settings.config import settings
 
 app = FastAPI()
 
-# Configure CORS so the frontend can interact with this API
+# Configure CORS dynamically so the frontend can interact with this API
+origins = settings.cors_origins.split(",") if settings.cors_origins else ["*"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Adjust this in production to match your frontend domain
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(AuthMiddleware)
 
+app.include_router(auth_router)
 app.include_router(jobs_router)
 app.include_router(testing_router)
 app.include_router(metrics_router)
