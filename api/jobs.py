@@ -9,6 +9,9 @@ from database.db import get_db
 from sqlalchemy.orm import Session
 from services.registry import LIVE_TEXT_SPACES
 from typing import Any
+from auth.dependencies import get_current_user
+from database.models_db import User
+from middleware.rate_limit_middleware import check_rate_limit
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/jobs", tags=["Jobs"])
@@ -38,8 +41,15 @@ class JobRequest(BaseModel):
 
 # --- POST ROUTE ---
 @router.post("")
-def run_model(request: JobRequest, db: Session = Depends(get_db)):
-    logger.info(f"[JOB SUBMIT] Received request for model '{request.model}'")
+def run_model(
+    request: JobRequest, 
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    logger.info(f"[JOB SUBMIT] Received request for model '{request.model}' from user '{current_user.username}'")
+
+    # Enforce model-specific rate limiting
+    check_rate_limit(user_id=current_user.id, model_name=request.model)
 
     # Validate model exists in registry
     if request.model not in LIVE_TEXT_SPACES:
@@ -48,7 +58,7 @@ def run_model(request: JobRequest, db: Session = Depends(get_db)):
 
     try:
         # Create job record in DB
-        job_id = create_job(user_id="test-user", model=request.model, input_data=request.input, db=db)
+        job_id = create_job(user_id=current_user.id, model=request.model, input_data=request.input, db=db)
         logger.info(f"[JOB SUBMIT] Created job {job_id} in database (status: queued)")
 
         # Enqueue job to Redis Queue
@@ -69,12 +79,17 @@ def run_model(request: JobRequest, db: Session = Depends(get_db)):
 
 # --- GET ROUTE ---
 @router.get("/{job_id}")
-def get_job_status(job_id: str, db: Session = Depends(get_db)):
-    logger.info(f"[JOB STATUS] Checking status for job {job_id}")
+def get_job_status(job_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    logger.info(f"[JOB STATUS] Checking status for job {job_id} by user {current_user.username}")
     job = get_job(job_id, db=db)
     if not job:
         logger.warning(f"[JOB STATUS] Job {job_id} not found in database.")
         raise HTTPException(status_code=404, detail="Job not found")
+
+    # Check ownership
+    if job.user_id != current_user.id:
+        logger.warning(f"[JOB STATUS] User {current_user.id} unauthorized to access job {job_id}")
+        raise HTTPException(status_code=403, detail="Not authorized to access this job")
 
     return {
         "job_id": job.id,

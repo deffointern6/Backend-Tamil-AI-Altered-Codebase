@@ -27,3 +27,7 @@ metrics.jsonl
 # OS files
 .DS_Store
 Thumbs.db
+
+# Test databases
+test.db
+*.db

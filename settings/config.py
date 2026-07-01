@@ -7,6 +7,13 @@ class Settings(BaseSettings):
     database_url: AnyUrl
     redis_url: str = "redis://localhost:6379/0"
     
+    # JWT Configuration
+    jwt_secret_key: str = "super-secret-tamil-ai-key-change-in-production"
+    jwt_algorithm: str = "HS256"
+    access_token_expire_minutes: int = 60
+    refresh_token_expire_days: int = 7
+    cors_origins: str = "*"
+    
     # Automatically read from a local .env configuration file
     model_config = SettingsConfigDict(
         env_file=".env", 

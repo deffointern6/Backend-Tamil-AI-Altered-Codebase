@@ -7,13 +7,15 @@ from sqlalchemy.orm import sessionmaker
 # Setup test environment before importing database modules
 import os
 from settings.config import settings
-settings.database_url = "sqlite:///./test_jobs.db"
+settings.database_url = "sqlite:///./test.db"
 
 from database.db import Base, SessionLocal, engine
-from database.models_db import Job
+from database.models_db import Job, User
 from database.jobs import get_job, create_job
 from main import app
 from worker import run_job
+from auth.hash import hash_password
+from auth.jwt import create_access_token
 
 class TestAsyncJobs(unittest.TestCase):
 
@@ -25,20 +27,31 @@ class TestAsyncJobs(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        # Cleanup test database file
+        # Cleanup test database tables
         Base.metadata.drop_all(bind=engine)
-        if os.path.exists("./test_jobs.db"):
-            try:
-                os.remove("./test_jobs.db")
-            except OSError:
-                pass
 
     def setUp(self):
         # Clear tables between tests
         db = SessionLocal()
         try:
             db.query(Job).delete()
+            db.query(User).delete()
             db.commit()
+            
+            # Create a test user for authenticated requests
+            self.test_user = User(
+                username="testuser",
+                email="testuser@example.com",
+                hashed_password=hash_password("password123"),
+                is_active=True
+            )
+            db.add(self.test_user)
+            db.commit()
+            db.refresh(self.test_user)
+            
+            # Generate JWT token
+            token = create_access_token(data={"sub": self.test_user.username})
+            self.headers = {"Authorization": f"Bearer {token}"}
         finally:
             db.close()
 
@@ -50,7 +63,7 @@ class TestAsyncJobs(unittest.TestCase):
             "input": "I need a leave letter"
         }
         
-        response = self.client.post("/jobs", json=payload)
+        response = self.client.post("/jobs", json=payload, headers=self.headers)
         
         self.assertEqual(response.status_code, 200)
         data = response.json()
@@ -62,6 +75,7 @@ class TestAsyncJobs(unittest.TestCase):
         # Verify database record exists
         job = get_job(job_id)
         self.assertIsNotNone(job)
+        self.assertEqual(job.user_id, self.test_user.id)
         self.assertEqual(job.model, "letter-gen")
         self.assertEqual(job.status, "queued")
         self.assertEqual(job.input, "I need a leave letter")
@@ -76,7 +90,7 @@ class TestAsyncJobs(unittest.TestCase):
             "model": "unknown-nonexistent-model",
             "input": "test input"
         }
-        response = self.client.post("/jobs", json=payload)
+        response = self.client.post("/jobs", json=payload, headers=self.headers)
         self.assertEqual(response.status_code, 404)
 
     @patch("worker.log_metric")
