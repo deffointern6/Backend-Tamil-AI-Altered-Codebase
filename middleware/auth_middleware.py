@@ -10,8 +10,6 @@ PUBLIC_PREFIXES = [
     "/auth",
     "/health",
     "/models",
-    "/metrics",
-    "/testing",
     "/docs",
     "/openapi.json",
     "/redoc",

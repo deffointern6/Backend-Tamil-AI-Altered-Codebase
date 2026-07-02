@@ -12,7 +12,7 @@ from settings.config import settings
 app = FastAPI()
 
 # Configure CORS dynamically so the frontend can interact with this API
-origins = settings.cors_origins.split(",") if settings.cors_origins else ["*"]
+origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()] if settings.cors_origins else ["*"]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
