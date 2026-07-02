@@ -6,6 +6,8 @@ requests
 gradio_client
 tenacity
 sqlalchemy
+psycopg[binary]
+huggingface_hub
 redis
 rq
 PyJWT
