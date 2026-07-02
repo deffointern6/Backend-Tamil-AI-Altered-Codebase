@@ -323,6 +323,13 @@ class ProofreaderAdapter(ModelAdapter):
             response.raise_for_status()
             result = response.json()
 
+            # Filter out punctuation/space tokens so the frontend
+            # only receives actual word tokens (avoids empty cards).
+            if "tokens" in result:
+                result["tokens"] = [
+                    t for t in result["tokens"] if t.get("type") != "punct"
+                ]
+
             return {
                 "status": "success",
                 "source": "hf-space",
@@ -332,3 +339,125 @@ class ProofreaderAdapter(ModelAdapter):
         except Exception as e:
             logger.exception("Remote proofreader space call failed")
             raise RuntimeError(f"Remote proofreader space call failed ({self.space_id}): {str(e)}")
+
+
+class RunPodAdapter(ModelAdapter):
+    """
+    Adapter for RunPod Serverless endpoints.
+    Calls the /runsync endpoint for synchronous inference.
+    
+    Usage:
+        adapter = RunPodAdapter(
+            endpoint_id="your-endpoint-id",
+            api_key="your-runpod-api-key",
+            model_name="poem-gen"
+        )
+        result = adapter.run("some input text")
+    """
+    RUNPOD_BASE_URL = "https://api.runpod.ai/v2"
+
+    def __init__(self, endpoint_id: str, api_key: str, model_name: str = "unknown"):
+        self.endpoint_id = endpoint_id
+        self.api_key = api_key
+        self.model_name = model_name
+        self.runsync_url = f"{self.RUNPOD_BASE_URL}/{endpoint_id}/runsync"
+        logger.info(f"[INIT] RunPodAdapter initialized: {model_name} → {self.runsync_url}")
+
+    @retry(stop=stop_after_attempt(3), wait=wait_fixed(2))
+    def _call_endpoint(self, payload: dict) -> dict:
+        """Send a synchronous inference request to RunPod."""
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+        response = requests.post(
+            self.runsync_url,
+            json={"input": payload},
+            headers=headers,
+            timeout=90,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def run(self, text_input: Any) -> dict:
+        # Normalize input to a dict payload
+        if isinstance(text_input, dict):
+            payload = text_input
+        elif isinstance(text_input, str):
+            payload = {"text": text_input}
+        else:
+            payload = {"text": str(text_input)}
+
+        try:
+            logger.info(f"[RUNPOD CALL] {self.model_name} → {self.runsync_url}")
+            logger.debug(f"[RUNPOD PAYLOAD] {payload}")
+
+            result = self._call_endpoint(payload)
+
+            # RunPod runsync returns {"id": "...", "status": "COMPLETED", "output": ...}
+            if result.get("status") == "COMPLETED":
+                return {
+                    "status": "success",
+                    "source": "runpod",
+                    "model": self.model_name,
+                    "data": result.get("output"),
+                }
+
+            # If status is FAILED or IN_QUEUE (shouldn't happen with runsync normally)
+            error_msg = result.get("error", f"RunPod returned status: {result.get('status')}")
+            raise RuntimeError(f"RunPod inference failed: {error_msg}")
+
+        except requests.exceptions.RequestException as e:
+            logger.exception("RunPod HTTP request failed")
+            raise RuntimeError(
+                f"RunPod endpoint call failed ({self.model_name}): {str(e)}"
+            )
+        except Exception as e:
+            logger.exception("RunPod execution failed")
+            raise RuntimeError(
+                f"RunPod call failed ({self.model_name}): {str(e)}"
+            )
+
+
+class FallbackAdapter(ModelAdapter):
+    """
+    Wraps a primary adapter and a fallback adapter.
+    Tries the primary first (e.g. HuggingFace); if it raises any
+    exception, transparently retries with the fallback (e.g. RunPod).
+
+    This is the cost-saving strategy: use the free/cheaper primary
+    and only consume fallback resources when the primary is truly down.
+    """
+
+    def __init__(self, primary: ModelAdapter, fallback: ModelAdapter, model_name: str = "unknown"):
+        self.primary = primary
+        self.fallback = fallback
+        self.model_name = model_name
+        logger.info(
+            f"[INIT] FallbackAdapter for '{model_name}': "
+            f"primary={type(primary).__name__}, fallback={type(fallback).__name__}"
+        )
+
+    def run(self, text_input: Any) -> dict:
+        # --- Try primary (HF) first ---
+        try:
+            logger.info(f"[FALLBACK] Trying primary adapter for '{self.model_name}'")
+            return self.primary.run(text_input)
+        except Exception as primary_err:
+            logger.warning(
+                f"[FALLBACK] Primary adapter failed for '{self.model_name}': {primary_err}. "
+                f"Falling back to {type(self.fallback).__name__}."
+            )
+
+        # --- Primary failed → try fallback (RunPod) ---
+        try:
+            logger.info(f"[FALLBACK] Trying fallback adapter for '{self.model_name}'")
+            return self.fallback.run(text_input)
+        except Exception as fallback_err:
+            logger.exception(
+                f"[FALLBACK] Both primary and fallback failed for '{self.model_name}'"
+            )
+            raise RuntimeError(
+                f"All adapters failed for '{self.model_name}'. "
+                f"Primary error: {primary_err}. Fallback error: {fallback_err}"
+            )

@@ -1,6 +1,13 @@
 from threading import Lock
 from settings.config import settings  
-from services.adapters import HuggingFaceSpaceAdapter, LetterGenAdapter, EmailGenAdapter, ProofreaderAdapter
+from services.adapters import (
+    HuggingFaceSpaceAdapter,
+    LetterGenAdapter,
+    EmailGenAdapter,
+    ProofreaderAdapter,
+    RunPodAdapter,
+    FallbackAdapter,
+)
 
 # Thread Safety and Cache
 _MODEL_CACHE = {}
@@ -53,6 +60,55 @@ LIVE_TEXT_SPACES = {
 }
 
 
+# ──────────────────────────────────────────────────────────────────────
+# RunPod Serverless Endpoints (fallback when HF Spaces are down)
+# ──────────────────────────────────────────────────────────────────────
+# Uncomment and fill in the endpoint IDs once you deploy to RunPod.
+# Any model listed here will automatically get a FallbackAdapter that
+# tries HF first and falls over to RunPod only if HF completely fails.
+#
+# Format:  "model-name": "runpod-endpoint-id"
+#
+# RUNPOD_ENDPOINTS = {
+#     "letter-gen":      "your-letter-gen-endpoint-id",
+#     "paraphrase-gen":  "your-paraphrase-gen-endpoint-id",
+#     "mcq-gen":         "your-mcq-gen-endpoint-id",
+#     "tongue-twister":  "your-tongue-twister-endpoint-id",
+#     "poem-gen":        "your-poem-gen-endpoint-id",
+#     "email-gen":       "your-email-gen-endpoint-id",
+#     "proofreader":     "your-proofreader-endpoint-id",
+# }
+RUNPOD_ENDPOINTS: dict[str, str] = {}
+
+
+def _build_runpod_adapter(model_name: str) -> RunPodAdapter | None:
+    """
+    Build a RunPodAdapter for the given model if a RunPod endpoint is
+    configured AND the API key is present. Returns None otherwise.
+    """
+    endpoint_id = RUNPOD_ENDPOINTS.get(model_name)
+    if not endpoint_id or not settings.runpod_api_key:
+        return None
+
+    return RunPodAdapter(
+        endpoint_id=endpoint_id,
+        api_key=settings.runpod_api_key,
+        model_name=model_name,
+    )
+
+
+def _maybe_wrap_with_fallback(model_name: str, primary: "ModelAdapter") -> "ModelAdapter":
+    """
+    If a RunPod fallback endpoint is configured for this model,
+    wrap the primary adapter in a FallbackAdapter. Otherwise
+    return the primary adapter as-is.
+    """
+    runpod = _build_runpod_adapter(model_name)
+    if runpod is None:
+        return primary
+    return FallbackAdapter(primary=primary, fallback=runpod, model_name=model_name)
+
+
 def get_model(model_name: str):
     # 1. Fast read path (no lock needed for reading in Python)
     if model_name in _MODEL_CACHE:
@@ -73,6 +129,9 @@ def get_model(model_name: str):
                 config["space"], config["api"], settings.hf_token, config["input"]
             )
 
+        # Wrap with RunPod fallback if endpoint is configured
+        if adapter:
+            adapter = _maybe_wrap_with_fallback(model_name, adapter)
 
     # 3. Lock only to safely write it to the cache
     if adapter:
@@ -90,10 +149,12 @@ def list_models():
 
     # HuggingFace Spaces
     for name, config in LIVE_TEXT_SPACES.items():
+        has_fallback = name in RUNPOD_ENDPOINTS and bool(settings.runpod_api_key)
         models.append({
             "name": name,
             "type": "text",
             "source": "hf-space",
+            "fallback": "runpod" if has_fallback else None,
             "description": config["description"]
         })
 
