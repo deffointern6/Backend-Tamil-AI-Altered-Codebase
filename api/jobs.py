@@ -35,6 +35,16 @@ MODEL_CHAR_LIMITS = {
     "default": 1000
 }
 
+def clean_whitespace(val: Any) -> Any:
+    if isinstance(val, str):
+        return val.strip()
+    elif isinstance(val, dict):
+        return {k: clean_whitespace(v) for k, v in val.items()}
+    elif isinstance(val, list):
+        return [clean_whitespace(item) for item in val]
+    return val
+
+
 # --- REQUEST MODELS ---
 class JobRequest(BaseModel):
     model: str = "letter-gen"
@@ -48,6 +58,8 @@ class JobRequest(BaseModel):
                 data["input"] = data["user_text"]
             if "model" not in data:
                 data["model"] = "letter-gen"
+            if "input" in data:
+                data["input"] = clean_whitespace(data["input"])
         return data
 
     @model_validator(mode="after")
@@ -72,6 +84,9 @@ class JobRequest(BaseModel):
         else:
             text_to_check = str(self.input)
             
+        if not text_to_check or not text_to_check.strip():
+            raise ValueError("Input text cannot be empty.")
+
         if len(text_to_check) > limit:
             raise ValueError(f"Input text exceeds the maximum limit of {limit} characters for model '{self.model}'.")
             

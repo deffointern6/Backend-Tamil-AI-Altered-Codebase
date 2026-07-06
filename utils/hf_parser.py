@@ -197,6 +197,44 @@ def parse_email_generator_output(raw) -> dict:
     }
 
 
+def parse_poem_generator_output(raw) -> str:
+    """
+    Cleans and extracts a single clean poem from the model output.
+    Removes metadata tags and discards secondary generated few-shot examples.
+    """
+    text = raw.get("data") if isinstance(raw, dict) and "data" in raw else raw
+    if not isinstance(text, str):
+        return text
+
+    # If the output contains multiple poem blocks, split by the closing tag of the first poem
+    if "</poem>" in text:
+        text = text.split("</poem>")[0]
+        
+    # Split by opening tag if it exists and take the text after it
+    if "<poem>" in text:
+        parts = text.split("<poem>")
+        text = parts[-1]
+
+    # Clean individual lines to filter out any residual XML-style metadata tags
+    lines = text.splitlines()
+    cleaned_lines = []
+    for line in lines:
+        line_strip = line.strip()
+        if not line_strip:
+            cleaned_lines.append("")
+            continue
+        # Skip lines that look like XML tags or contain metadata definitions
+        if (line_strip.startswith("<") and line_strip.endswith(">")) or \
+           "topic>" in line_strip.lower() or \
+           "theme>" in line_strip.lower() or \
+           "style>" in line_strip.lower() or \
+           "poem>" in line_strip.lower():
+            continue
+        cleaned_lines.append(line)
+
+    return "\n".join(cleaned_lines).strip()
+
+
 def parse_model_output(model_name: str, raw) -> dict | str | list | None:
     """
     Centralized dispatcher that cleans model output based on the model name.
@@ -206,6 +244,15 @@ def parse_model_output(model_name: str, raw) -> dict | str | list | None:
         return parse_letter_generator_output(raw)
     elif model_name == "email-gen":
         return parse_email_generator_output(raw)
+    elif model_name == "mcq-gen":
+        data = raw.get("data") if isinstance(raw, dict) and "data" in raw else raw
+        if not isinstance(data, list):
+            return {"error": "Invalid MCQ response format: expected a list of questions."}
+        if not data:
+            return {"error": "No MCQs were generated. Try a longer, more descriptive passage."}
+        return data
+    elif model_name == "poem-gen":
+        return parse_poem_generator_output(raw)
 
     # For other models, extract nested "data" if raw is an adapter result dictionary, or return raw directly
     if isinstance(raw, dict) and "data" in raw:

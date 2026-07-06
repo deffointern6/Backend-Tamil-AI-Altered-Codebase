@@ -28,8 +28,6 @@ engine = create_engine(
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, expire_on_commit=False)
 Base = declarative_base()
 
-# Create tables automatically on startup/import
-# We import models_db here (after Base is defined) to avoid circular imports.
 import database.models_db
 Base.metadata.create_all(bind=engine)
 

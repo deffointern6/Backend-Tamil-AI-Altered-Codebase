@@ -292,7 +292,7 @@ class ProofreaderAdapter(ModelAdapter):
         self.token = token
         
         # Subdomain of hxari/tamil-spell-checker is hxari-tamil-spell-checker
-        subdomain = self.space_id.replace("/", "-").lower()
+        subdomain = self.space_id.replace("/", "-").replace("_", "-").lower()
         self.api_url = f"https://{subdomain}.hf.space/check"
         logger.info(f"[INIT] ProofreaderAdapter initialized for remote Space: {self.api_url}")
 
@@ -461,3 +461,70 @@ class FallbackAdapter(ModelAdapter):
                 f"All adapters failed for '{self.model_name}'. "
                 f"Primary error: {primary_err}. Fallback error: {fallback_err}"
             )
+
+
+class MCQGenAdapter(ModelAdapter):
+    def __init__(self, space_id: str, token: str):
+        self.space_id = space_id
+        self.token = token
+        logger.info(f"[INIT] MCQGenAdapter initialized for Space: {self.space_id}")
+
+    def run(self, text_input: Any):
+        passage = ""
+        if isinstance(text_input, str):
+            passage = text_input
+        elif isinstance(text_input, dict):
+            passage = text_input.get("passage", text_input.get("input", text_input.get("text", "")))
+        else:
+            raise ValueError("Invalid request format for mcq-gen model.")
+
+        if not passage:
+            raise ValueError("Input passage cannot be empty.")
+
+        try:
+            logger.info(f"[MCQ CALL] Calling Gradio Client for space {self.space_id}")
+            # Initialize Gradio Client. Timeout is configured via httpx_kwargs
+            client = GradioClient(
+                self.space_id, 
+                token=self.token, 
+                httpx_kwargs={"timeout": 90}
+            )
+            
+            # Predict using the named endpoint /on_generate (fn_index 1)
+            result = client.predict(passage=passage, api_name="/on_generate")
+            logger.info(f"[MCQ RESPONSE] Gradio Client returned result type: {type(result)}")
+            
+            mcqs = []
+            # If the space's app.py is correctly updated to use gr.JSON/gr.Textbox for mcq_state
+            # instead of gr.State, result will be a tuple/list like [status_msg, mcq_list].
+            if isinstance(result, (list, tuple)):
+                if len(result) >= 2:
+                    mcqs = result[1]
+                elif len(result) == 1:
+                    # Check if the single element is the list of MCQs
+                    if isinstance(result[0], list):
+                        mcqs = result[0]
+                    else:
+                        status_msg = result[0]
+                        raise ValueError(f"Space returned status but no MCQ list. Status: {status_msg}. Ensure the Space's mcq_state is not a gr.State component.")
+            elif isinstance(result, str):
+                # If result is just a string, it means the space is still using gr.State, so we cannot get the MCQs.
+                if "No suitable sentences" in result or "Please enter some" in result:
+                    raise ValueError(result)
+                raise ValueError(
+                    f"Gradio Space returned a string status instead of the MCQ list: '{result}'. "
+                    f"IMPORTANT: Please change `mcq_state = gr.State([])` to `mcq_state = gr.JSON(visible=False, value=[])` "
+                    f"in the Space's `app.py` so the API client can retrieve the MCQs."
+                )
+            else:
+                raise ValueError(f"Unexpected response format from Gradio Space: {result}")
+
+            return {
+                "status": "success",
+                "source": "hf-space",
+                "model": self.space_id,
+                "data": mcqs
+            }
+        except Exception as e:
+            logger.exception("Gradio client MCQ generation failed")
+            raise RuntimeError(f"Gradio client MCQ generation failed ({self.space_id}): {str(e)}")

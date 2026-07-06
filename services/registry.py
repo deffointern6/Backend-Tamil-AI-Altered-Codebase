@@ -7,6 +7,7 @@ from services.adapters import (
     ProofreaderAdapter,
     RunPodAdapter,
     FallbackAdapter,
+    MCQGenAdapter,
 )
 
 # Thread Safety and Cache
@@ -28,9 +29,9 @@ LIVE_TEXT_SPACES = {
         "description": "Paraphrasing"
     },
     "mcq-gen": {
-        "space": "DeffoTech/quiz_generation",
-        "api": "/process_text",
-        "input": "text",
+        "space": "DeffoTech/MCQ_generator",
+        "api": "/on_generate",
+        "input": "passage",
         "description": "MCQ Generator"
     },
     "tongue-twister": {
@@ -124,6 +125,8 @@ def get_model(model_name: str):
             adapter = EmailGenAdapter(config["space"], settings.hf_token)
         elif model_name == "proofreader":
             adapter = ProofreaderAdapter(config["space"], settings.hf_token)
+        elif model_name == "mcq-gen":
+            adapter = MCQGenAdapter(config["space"], settings.hf_token)
         else:
             adapter = HuggingFaceSpaceAdapter(
                 config["space"], config["api"], settings.hf_token, config["input"]
