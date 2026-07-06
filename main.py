@@ -11,6 +11,16 @@ from settings.config import settings
 
 app = FastAPI()
 
+@app.on_event("startup")
+def startup_event():
+    # Run watchdog to clean up stuck/orphaned jobs and recover lost queue items on boot
+    from utils.watchdog import cleanup_stuck_jobs, recover_lost_queued_jobs
+    try:
+        cleanup_stuck_jobs(timeout_minutes=15)
+        recover_lost_queued_jobs(timeout_minutes=10)
+    except Exception as e:
+        print(f"Startup watchdog cleanup/recovery failed: {e}")
+
 # Configure CORS dynamically so the frontend can interact with this API
 origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()] if settings.cors_origins else ["*"]
 app.add_middleware(
@@ -21,6 +31,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.add_middleware(AuthMiddleware)
+print("Allowed CORS origins:", origins)
 
 app.include_router(auth_router)
 app.include_router(jobs_router)

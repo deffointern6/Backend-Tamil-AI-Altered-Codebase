@@ -11,17 +11,27 @@ from settings.config import settings
 
 logger = logging.getLogger("metrics")
 
-# Path to the metrics file in the project root
-METRICS_FILE = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
-    "metrics.jsonl"
-)
+# Initialize Redis connection for metrics
+try:
+    redis_conn = Redis.from_url(settings.redis_url)
+except Exception as e:
+    logger.error(f"Failed to connect to Redis for metrics: {e}")
+    redis_conn = None
+
+# Key namespace for Redis metrics log
+REDIS_METRICS_KEY = "metrics:raw_log"
+
+# Keep legacy variable to prevent import breakages in tests
+METRICS_FILE = "metrics.jsonl"
 
 def log_metric(model_name: str, latency: float, success: bool, queue_wait_time: float = 0.0, wake_up_delay: float = 0.0):
     """
-    Logs a single model execution metric into metrics.jsonl.
-    Multi-process/thread safe file append.
+    Logs a single model execution metric into Redis Sorted Set.
     """
+    if redis_conn is None:
+        logger.error("Redis connection not available for logging metrics.")
+        return
+
     try:
         record = {
             "timestamp": datetime.datetime.utcnow().isoformat(),
@@ -31,8 +41,13 @@ def log_metric(model_name: str, latency: float, success: bool, queue_wait_time: 
             "queue_wait_time": queue_wait_time,
             "wake_up_delay": wake_up_delay
         }
-        with open(METRICS_FILE, "a", encoding="utf-8") as f:
-            f.write(json.dumps(record) + "\n")
+        now = time.time()
+        # Add serialized JSON string to sorted set with timestamp score
+        redis_conn.zadd(REDIS_METRICS_KEY, {json.dumps(record): now})
+        
+        # Keep only the last 24 hours of raw data to prevent Redis memory bloat
+        one_day_ago = now - 86400
+        redis_conn.zremrangebyscore(REDIS_METRICS_KEY, 0, one_day_ago)
     except Exception as e:
         logger.error(f"Failed to log metric for model {model_name}: {e}")
 
@@ -68,21 +83,25 @@ def get_queue_depth() -> int:
 
 def read_metrics_records() -> list:
     """
-    Reads and parses all lines in metrics.jsonl.
+    Reads and parses all records from the Redis Sorted Set.
     """
-    if not os.path.exists(METRICS_FILE):
+    if redis_conn is None:
         return []
-    records = []
-    with open(METRICS_FILE, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
+
+    try:
+        # Retrieve all items from Redis sorted set
+        raw_items = redis_conn.zrange(REDIS_METRICS_KEY, 0, -1)
+        records = []
+        for item in raw_items:
             try:
-                records.append(json.loads(line))
+                decoded = item.decode("utf-8") if isinstance(item, bytes) else item
+                records.append(json.loads(decoded))
             except Exception:
                 pass
-    return records
+        return records
+    except Exception as e:
+        logger.error(f"Failed to read metrics records from Redis: {e}")
+        return []
 
 
 def calculate_window_stats(records: list, start_time: datetime.datetime) -> dict:

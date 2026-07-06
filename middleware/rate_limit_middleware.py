@@ -15,13 +15,13 @@ except Exception as e:
 
 # Model-specific rate limits defined as (limit, window_seconds)
 MODEL_RATE_LIMITS = {
-    "letter-gen": (10, 60),
-    "paraphrase-gen": (15, 60),
-    "mcq-gen": (5, 60),
-    "tongue-twister": (20, 60),
-    "poem-gen": (5, 60),
-    "email-gen": (10, 60),
-    "proofreader": (30, 60),
+    "letter-gen": (8, 60),          # Heavy generation
+    "email-gen": (12, 60),          # Medium
+    "paraphrase-gen": (10, 60),     # Medium-heavy
+    "tongue-twister": (30, 60),     # Very light
+    "poem-gen": (8, 60),            # Generation
+    "mcq-gen": (6, 60),             # Heavy processing
+    "proofreader": (25, 60),        # Usually fast
     "default": (10, 60)
 }
 

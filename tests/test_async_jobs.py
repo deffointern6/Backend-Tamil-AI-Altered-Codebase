@@ -82,7 +82,7 @@ class TestAsyncJobs(unittest.TestCase):
         
         # Verify enqueued into default Redis queue
         from unittest.mock import ANY
-        mock_default_queue.enqueue.assert_called_once_with("worker.run_job", job_id, ANY, job_timeout=600)
+        mock_default_queue.enqueue.assert_called_once_with("worker.run_job", job_id, ANY, job_timeout=90, retry=ANY)
         mock_high_queue.enqueue.assert_not_called()
 
     def test_post_unknown_model_returns_404(self):
@@ -148,6 +148,45 @@ class TestAsyncJobs(unittest.TestCase):
         
         # Verify log_metric was called
         mock_log_metric.assert_called_once()
+
+    def test_post_job_exceeds_character_limit(self):
+        payload = {
+            "model": "tongue-twister",
+            "input": "a" * 201  # Limit is 200
+        }
+        response = self.client.post("/jobs", json=payload, headers=self.headers)
+        self.assertEqual(response.status_code, 422)
+        # Verify validation message contains the limit error
+        data = response.json()
+        self.assertIn("detail", data)
+        self.assertIn("limit", data["detail"][0]["msg"])
+
+    def test_post_job_exceeds_user_concurrency_limit(self):
+        # Create 3 active jobs in DB for the test user
+        db = SessionLocal()
+        try:
+            for _ in range(3):
+                job = Job(
+                    user_id=self.test_user.id,
+                    model="letter-gen",
+                    status="running",
+                    input="some input"
+                )
+                db.add(job)
+            db.commit()
+        finally:
+            db.close()
+            
+        # Now submit a 4th job
+        payload = {
+            "model": "letter-gen",
+            "input": "fourth job input"
+        }
+        response = self.client.post("/jobs", json=payload, headers=self.headers)
+        self.assertEqual(response.status_code, 429)
+        data = response.json()
+        self.assertIn("detail", data)
+        self.assertIn("Maximum concurrent jobs limit reached", data["detail"])
 
 if __name__ == '__main__':
     unittest.main()

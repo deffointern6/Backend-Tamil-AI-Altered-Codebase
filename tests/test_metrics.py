@@ -1,38 +1,56 @@
 import unittest
-import os
 import json
 import datetime
+import time
 from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 
-# Override METRICS_FILE path before importing to keep test directory clean
-import utils.metrics
-TEST_METRICS_FILE = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
-    "test_metrics.jsonl"
-)
-utils.metrics.METRICS_FILE = TEST_METRICS_FILE
-
-from utils.metrics import log_metric, calculate_metrics, read_metrics_records
+from utils.metrics import log_metric, calculate_metrics, read_metrics_records, REDIS_METRICS_KEY
 from main import app
 
 class TestMetrics(unittest.TestCase):
 
     def setUp(self):
-        # Clean up test metrics file before each test
-        if os.path.exists(TEST_METRICS_FILE):
-            try:
-                os.remove(TEST_METRICS_FILE)
-            except OSError:
-                pass
+        # Mock Redis store in memory
+        self.redis_store = {}
+        self.mock_redis = MagicMock()
+        
+        # Simulates Redis zadd
+        def mock_zadd(key, mapping):
+            self.redis_store.setdefault(key, [])
+            for member, score in mapping.items():
+                # Avoid duplicates in mock
+                self.redis_store[key] = [x for x in self.redis_store[key] if x[0] != member]
+                self.redis_store[key].append((member, score))
+            # Keep sorted by score
+            self.redis_store[key].sort(key=lambda x: x[1])
+            return len(mapping)
+        self.mock_redis.zadd.side_effect = mock_zadd
+        
+        # Simulates Redis zrange
+        def mock_zrange(key, start, end):
+            if key not in self.redis_store:
+                return []
+            items = [item[0] for item in self.redis_store[key]]
+            # Convert to bytes as live Redis does
+            return [i.encode("utf-8") if isinstance(i, str) else i for i in items]
+        self.mock_redis.zrange.side_effect = mock_zrange
+        
+        # Simulates Redis zremrangebyscore
+        def mock_zremrange(key, min_score, max_score):
+            if key not in self.redis_store:
+                return 0
+            original_len = len(self.redis_store[key])
+            self.redis_store[key] = [x for x in self.redis_store[key] if x[1] > max_score]
+            return original_len - len(self.redis_store[key])
+        self.mock_redis.zremrangebyscore.side_effect = mock_zremrange
+        
+        # Patch the global redis_conn in utils.metrics
+        self.patcher = patch("utils.metrics.redis_conn", self.mock_redis)
+        self.patcher.start()
 
     def tearDown(self):
-        # Clean up test metrics file after each test
-        if os.path.exists(TEST_METRICS_FILE):
-            try:
-                os.remove(TEST_METRICS_FILE)
-            except OSError:
-                pass
+        self.patcher.stop()
 
     def test_log_metric(self):
         log_metric("letter-gen", 1.5, True, queue_wait_time=0.2, wake_up_delay=1.0)
@@ -50,7 +68,7 @@ class TestMetrics(unittest.TestCase):
     def test_calculate_metrics(self, mock_get_queue_depth):
         mock_get_queue_depth.return_value = 5
         
-        # Write mock records directly
+        # Write mock records directly to the in-memory Redis mock
         now = datetime.datetime.utcnow()
         records = [
             {"timestamp": (now - datetime.timedelta(seconds=10)).isoformat(), "model_name": "letter-gen", "latency": 1.0, "success": True, "queue_wait_time": 0.1, "wake_up_delay": 0.0},
@@ -60,9 +78,10 @@ class TestMetrics(unittest.TestCase):
             {"timestamp": (now - datetime.timedelta(minutes=10)).isoformat(), "model_name": "poem-gen", "latency": 5.0, "success": True, "queue_wait_time": 0.5, "wake_up_delay": 3.0},
         ]
         
-        with open(TEST_METRICS_FILE, "w", encoding="utf-8") as f:
-            for r in records:
-                f.write(json.dumps(r) + "\n")
+        for r in records:
+            dt = datetime.datetime.fromisoformat(r["timestamp"])
+            score = dt.timestamp()
+            self.mock_redis.zadd(REDIS_METRICS_KEY, {json.dumps(r): score})
                 
         metrics = calculate_metrics()
         
@@ -74,7 +93,7 @@ class TestMetrics(unittest.TestCase):
         self.assertEqual(last_1_min["total_requests"], 4)
         self.assertEqual(last_1_min["failed_requests"]["total"], 1)
         self.assertEqual(last_1_min["requests_per_model"]["letter-gen"], 4)
-        # Latencies for letter-gen: 1.0, 2.0, 3.0. P95 index for 3 elements: int(3 * 0.95) = 2. Sorted: [1.0, 2.0, 3.0] -> index 2 is 3.0
+        # Latencies for letter-gen: 1.0, 2.0, 3.0. P95 index: sorted [1.0, 2.0, 3.0] -> index 2 is 3.0
         self.assertEqual(last_1_min["p95_latency_per_model"]["letter-gen"], 3.0)
         
         # Verify 1 hour stats (includes poem-gen)
@@ -90,8 +109,7 @@ class TestMetrics(unittest.TestCase):
         # Write one mock record
         now = datetime.datetime.utcnow()
         record = {"timestamp": now.isoformat(), "model_name": "letter-gen", "latency": 1.2, "success": True, "queue_wait_time": 0.1, "wake_up_delay": 0.0}
-        with open(TEST_METRICS_FILE, "w", encoding="utf-8") as f:
-            f.write(json.dumps(record) + "\n")
+        self.mock_redis.zadd(REDIS_METRICS_KEY, {json.dumps(record): now.timestamp()})
             
         client = TestClient(app)
         

@@ -15,6 +15,8 @@ if db_url.startswith("postgresql://") and "+psycopg" not in db_url:
 # SQLite checks - only for local development and unit testing
 connect_args = {}
 if db_url.startswith("sqlite"):
+    if settings.environment.lower() == "production":
+        raise RuntimeError("SQLite is not supported in a production environment. Configure a PostgreSQL database.")
     connect_args["check_same_thread"] = False
 
 engine = create_engine(

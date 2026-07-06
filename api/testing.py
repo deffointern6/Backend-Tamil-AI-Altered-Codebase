@@ -22,6 +22,14 @@ class TestRequest(BaseModel):
                 data["model"] = "letter-gen"
         return data
 
+    @model_validator(mode="after")
+    def check_char_limit(self) -> "TestRequest":
+        from api.jobs import MODEL_CHAR_LIMITS
+        limit = MODEL_CHAR_LIMITS.get(self.model, MODEL_CHAR_LIMITS["default"])
+        if len(self.user_text) > limit:
+            raise ValueError(f"Input text exceeds the maximum limit of {limit} characters for model '{self.model}'.")
+        return self
+
 
 @router.post("")
 def test_huggingface_live_call(request: TestRequest):

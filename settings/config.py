@@ -6,6 +6,7 @@ class Settings(BaseSettings):
     hf_token: str
     database_url: AnyUrl
     redis_url: str = "redis://localhost:6379/0"
+    environment: str = "development"
     
     # JWT Configuration
     jwt_secret_key: str = "super-secret-tamil-ai-key-change-in-production"

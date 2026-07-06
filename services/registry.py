@@ -28,7 +28,7 @@ LIVE_TEXT_SPACES = {
         "description": "Paraphrasing"
     },
     "mcq-gen": {
-        "space": "DeffoTech/Tamil_MCQ_Quiz",
+        "space": "DeffoTech/quiz_generation",
         "api": "/process_text",
         "input": "text",
         "description": "MCQ Generator"
