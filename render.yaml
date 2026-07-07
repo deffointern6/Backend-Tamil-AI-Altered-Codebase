@@ -25,7 +25,7 @@ services:
     name: tamil-ai-worker
     env: python
     buildCommand: pip install -r requirements.txt
-    startCommand: rq worker -u $REDIS_URL high default --max-jobs 100
+    startCommand: python worker.py
     envVars:
       - key: HF_TOKEN
         sync: false

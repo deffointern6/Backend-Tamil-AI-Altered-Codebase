@@ -7,6 +7,17 @@ from utils.metrics import log_metric, is_space_sleeping
 
 logger = logging.getLogger("worker")
 
+# Preload all model adapters on worker boot (so that they are cached in the parent process
+# and inherited by child processes when RQ forks). This saves 2-8 seconds of setup latency per request.
+try:
+    logger.info("[WORKER] Preloading model adapters on startup...")
+    for model_name in LIVE_TEXT_SPACES.keys():
+        logger.info(f"[WORKER] Preloading model: {model_name}")
+        get_model(model_name)
+    logger.info("[WORKER] All model adapters preloaded successfully.")
+except Exception as e:
+    logger.error(f"[WORKER] Failed to preload some model adapters during startup: {e}")
+
 def run_job(job_id: str, enqueue_time: float = None):
     logger.info(f"[WORKER] Starting job {job_id}")
     job = get_job(job_id)
@@ -85,4 +96,26 @@ def run_job(job_id: str, enqueue_time: float = None):
         logger.exception(f"[WORKER] Job {job_id} failed with exception.")
         update_job(job_id, status="error", error=str(e))
         raise
+
+
+if __name__ == "__main__":
+    import os
+    import sys
+    from redis import Redis
+    from rq import Worker, Connection
+    from settings.config import settings
+    
+    logger.info("[WORKER] Starting RQ worker programmatically...")
+    try:
+        # Connect using settings.redis_url which falls back to localhost if not set
+        redis_conn = Redis.from_url(settings.redis_url)
+        with Connection(redis_conn):
+            # Listen to both high and default queues
+            worker = Worker(["high", "default"])
+            logger.info("[WORKER] Worker started successfully. Listening on 'high' and 'default' queues.")
+            # Set max_jobs to 100 to periodically cycle the worker process (prevents memory leaks)
+            worker.work(max_jobs=100)
+    except Exception as e:
+        logger.error(f"[WORKER] Critical worker failure: {e}")
+        sys.exit(1)
 

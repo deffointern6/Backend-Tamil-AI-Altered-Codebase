@@ -52,15 +52,26 @@ def log_metric(model_name: str, latency: float, success: bool, queue_wait_time: 
         logger.error(f"Failed to log metric for model {model_name}: {e}")
 
 
+_SPACE_STATUS_CACHE = {}  # Cache map: space_id -> (is_sleeping, timestamp)
+
 def is_space_sleeping(space_id: str) -> bool:
     """
     Checks if a Hugging Face space is sleeping or not running.
+    Caches the status for 5 minutes (300 seconds) to avoid overhead on every request.
     """
+    now = time.time()
+    if space_id in _SPACE_STATUS_CACHE:
+        cached_val, timestamp = _SPACE_STATUS_CACHE[space_id]
+        if now - timestamp < 300:
+            return cached_val
+
     try:
         api = HfApi(token=settings.hf_token)
         runtime = api.get_space_runtime(repo_id=space_id)
         # Runtime stages: RUNNING, SLEEPING, PAUSED, STOPPED, BUILDING, etc.
-        return runtime.stage != "RUNNING"
+        is_sleeping = runtime.stage != "RUNNING"
+        _SPACE_STATUS_CACHE[space_id] = (is_sleeping, now)
+        return is_sleeping
     except Exception as e:
         logger.warning(f"Failed to check space status for {space_id}: {e}")
         return False

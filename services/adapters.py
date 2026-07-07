@@ -94,15 +94,14 @@ class LetterGenAdapter(ModelAdapter):
     def __init__(self, space_id: str, token: str):
         self.space_id = space_id
         self.token = token
-        self._client = None
-
-    @property
-    def client(self):
-        if self._client is None:
-            self._client = GradioClient(
-                self.space_id, token=self.token, httpx_kwargs={"timeout": 60}
+        try:
+            self.client = GradioClient(
+                self.space_id, token=token, httpx_kwargs={"timeout": 60}
             )
-        return self._client
+            logger.info(f"[INIT] LetterGenAdapter client initialized: {space_id}")
+        except Exception as e:
+            logger.exception("Failed to initialize LetterGenAdapter client")
+            self.client = None
 
     def run(self, text_input: Any):
         is_start = False
@@ -119,6 +118,11 @@ class LetterGenAdapter(ModelAdapter):
             raise ValueError("Invalid request format for letter-gen model.")
 
         client = self.client
+        if not client:
+            client = GradioClient(
+                self.space_id, token=self.token, httpx_kwargs={"timeout": 60}
+            )
+            self.client = client
 
         if is_start:
             try:
@@ -195,15 +199,14 @@ class EmailGenAdapter(ModelAdapter):
     def __init__(self, space_id: str, token: str):
         self.space_id = space_id
         self.token = token
-        self._client = None
-
-    @property
-    def client(self):
-        if self._client is None:
-            self._client = GradioClient(
-                self.space_id, token=self.token, httpx_kwargs={"timeout": 60}
+        try:
+            self.client = GradioClient(
+                self.space_id, token=token, httpx_kwargs={"timeout": 60}
             )
-        return self._client
+            logger.info(f"[INIT] EmailGenAdapter client initialized: {space_id}")
+        except Exception as e:
+            logger.exception("Failed to initialize EmailGenAdapter client")
+            self.client = None
 
     def run(self, text_input: Any):
         is_start = False
@@ -220,6 +223,11 @@ class EmailGenAdapter(ModelAdapter):
             raise ValueError("Invalid request format for email-gen model.")
 
         client = self.client
+        if not client:
+            client = GradioClient(
+                self.space_id, token=self.token, httpx_kwargs={"timeout": 60}
+            )
+            self.client = client
 
         if is_start:
             try:
@@ -471,7 +479,14 @@ class MCQGenAdapter(ModelAdapter):
     def __init__(self, space_id: str, token: str):
         self.space_id = space_id
         self.token = token
-        logger.info(f"[INIT] MCQGenAdapter initialized for Space: {self.space_id}")
+        try:
+            self.client = GradioClient(
+                self.space_id, token=token, httpx_kwargs={"timeout": 90}
+            )
+            logger.info(f"[INIT] MCQGenAdapter client initialized: {space_id}")
+        except Exception as e:
+            logger.exception("Failed to initialize MCQGenAdapter client")
+            self.client = None
 
     def run(self, text_input: Any):
         passage = ""
@@ -487,12 +502,12 @@ class MCQGenAdapter(ModelAdapter):
 
         try:
             logger.info(f"[MCQ CALL] Calling Gradio Client for space {self.space_id}")
-            # Initialize Gradio Client. Timeout is configured via httpx_kwargs
-            client = GradioClient(
-                self.space_id, 
-                token=self.token, 
-                httpx_kwargs={"timeout": 90}
-            )
+            client = self.client
+            if not client:
+                client = GradioClient(
+                    self.space_id, token=self.token, httpx_kwargs={"timeout": 90}
+                )
+                self.client = client
             
             # Predict using the named endpoint /on_generate (fn_index 1)
             result = client.predict(passage=passage, api_name="/on_generate")
