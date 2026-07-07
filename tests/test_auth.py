@@ -7,7 +7,7 @@ from settings.config import settings
 settings.database_url = "sqlite:///./test.db"
 
 from database.db import Base, SessionLocal, engine
-from database.models_db import User, Job
+from database.models_db import User, Job, Account
 from main import app
 
 class TestAuthAndMiddleware(unittest.TestCase):
@@ -26,6 +26,7 @@ class TestAuthAndMiddleware(unittest.TestCase):
         try:
             db.query(User).delete()
             db.query(Job).delete()
+            db.query(Account).delete()
             db.commit()
         finally:
             db.close()
@@ -158,6 +159,73 @@ class TestAuthAndMiddleware(unittest.TestCase):
             self.assertEqual(response.status_code, 429)
             data = response.json()
             self.assertEqual(data["detail"]["error"], "Rate limit exceeded")
+
+    def test_account_profile_flow(self):
+        # 1. Register a user
+        reg_payload = {
+            "username": "profile_tester",
+            "email": "profile@example.com",
+            "password": "profilepassword"
+        }
+        response = self.client.post("/auth/register", json=reg_payload)
+        self.assertEqual(response.status_code, 201)
+
+        # 2. Login to get access token
+        login_payload = {
+            "username": "profile_tester",
+            "password": "profilepassword"
+        }
+        response = self.client.post("/auth/login", json=login_payload)
+        self.assertEqual(response.status_code, 200)
+        token = response.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+
+        # 3. Retrieve account profile (automatically created on register)
+        response = self.client.get("/auth/account", headers=headers)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["username"], "profile_tester")
+        self.assertEqual(data["email"], "profile@example.com")
+        self.assertEqual(data["display_name"], "profile_tester")
+        self.assertEqual(data["phone_number"], "")
+        self.assertEqual(data["dob"], "")
+
+        # 4. Update the account profile (using YYYY-MM-DD format for DOB)
+        update_payload = {
+            "display_name": "Updated Display",
+            "phone_number": "+1234567890",
+            "dob": "1995-12-25"
+        }
+        response = self.client.put("/auth/account", json=update_payload, headers=headers)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["display_name"], "Updated Display")
+        self.assertEqual(data["phone_number"], "+1234567890")
+        # Ensure it got normalized to dd/mm/yyyy format in the response (and thus in the DB)
+        self.assertEqual(data["dob"], "25/12/1995")
+
+        # 5. Retrieve again to make sure it matches
+        response = self.client.get("/auth/account", headers=headers)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["display_name"], "Updated Display")
+        self.assertEqual(data["phone_number"], "+1234567890")
+        self.assertEqual(data["dob"], "25/12/1995")
+
+        # 6. Test direct dd/mm/yyyy update
+        update_payload = {
+            "dob": "01/01/2000"
+        }
+        response = self.client.put("/auth/account", json=update_payload, headers=headers)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["dob"], "01/01/2000")
+
+        # 7. Test invalid DOB format
+        update_payload = {
+            "dob": "invalid-date"
+        }
+        response = self.client.put("/auth/account", json=update_payload, headers=headers)
+        self.assertEqual(response.status_code, 400)
 
 if __name__ == '__main__':
     unittest.main()

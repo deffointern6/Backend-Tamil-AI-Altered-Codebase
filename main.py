@@ -9,7 +9,11 @@ from middleware.auth_middleware import AuthMiddleware
 
 from settings.config import settings
 
-app = FastAPI()
+app = FastAPI(
+    docs_url=None if settings.environment.lower() == "production" else "/docs",
+    redoc_url=None if settings.environment.lower() == "production" else "/redoc",
+    openapi_url=None if settings.environment.lower() == "production" else "/openapi.json"
+)
 
 @app.on_event("startup")
 def startup_event():

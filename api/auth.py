@@ -1,10 +1,11 @@
+import re
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from database.db import get_db
-from database.models_db import User, RefreshToken
+from database.models_db import User, RefreshToken, Account
 from auth.hash import hash_password, verify_password
 from auth.jwt import create_access_token, generate_refresh_token
 from auth.dependencies import get_current_user
@@ -38,6 +39,23 @@ class UserResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class AccountProfileResponse(BaseModel):
+    username: str
+    email: str
+    display_name: str | None = None
+    phone_number: str | None = None
+    dob: str | None = None
+
+    class Config:
+        from_attributes = True
+
+
+class AccountProfileUpdate(BaseModel):
+    display_name: str | None = None
+    phone_number: str | None = None
+    dob: str | None = None
 
 
 # --- HELPER FUNCTIONS ---
@@ -88,6 +106,19 @@ def register_user(request: UserRegister, db: Session = Depends(get_db)):
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
+
+    # Automatically create the associated Account record
+    new_account = Account(
+        user_id=new_user.id,
+        username=new_user.username,
+        email=new_user.email,
+        display_name=new_user.username,  # Default display name to username
+        phone_number="",
+        dob=""
+    )
+    db.add(new_account)
+    db.commit()
+    
     return new_user
 
 
@@ -219,4 +250,79 @@ def logout_user(request: RefreshRequest, db: Session = Depends(get_db)):
 @router.get("/me", response_model=UserResponse)
 def read_users_me(current_user: User = Depends(get_current_user)):
     return current_user
+
+
+def validate_and_format_dob(dob_str: str | None) -> str:
+    if not dob_str:
+        return ""
+    # If it is in YYYY-MM-DD format (ISO), convert to dd/mm/yyyy
+    if re.match(r"^\d{4}-\d{2}-\d{2}$", dob_str):
+        parts = dob_str.split("-")
+        return f"{parts[2]}/{parts[1]}/{parts[0]}"
+    # If it is in dd/mm/yyyy format, return it
+    if re.match(r"^\d{2}/\d{2}/\d{4}$", dob_str):
+        return dob_str
+    # Otherwise raise an error
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Invalid date of birth format. Must be DD/MM/YYYY or YYYY-MM-DD."
+    )
+
+
+# --- USER ACCOUNT PROFILE ENDPOINTS ---
+@router.get("/account", response_model=AccountProfileResponse)
+def get_account_profile(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    account = db.query(Account).filter(Account.user_id == current_user.id).first()
+    if not account:
+        # Create default profile for legacy users
+        account = Account(
+            user_id=current_user.id,
+            username=current_user.username,
+            email=current_user.email,
+            display_name=current_user.username,
+            phone_number="",
+            dob=""
+        )
+        db.add(account)
+        db.commit()
+        db.refresh(account)
+    return account
+
+
+@router.put("/account", response_model=AccountProfileResponse)
+def update_account_profile(
+    profile_data: AccountProfileUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    account = db.query(Account).filter(Account.user_id == current_user.id).first()
+    if not account:
+        account = Account(
+            user_id=current_user.id,
+            username=current_user.username,
+            email=current_user.email,
+            display_name=current_user.username,
+            phone_number="",
+            dob=""
+        )
+        db.add(account)
+        db.commit()
+        db.refresh(account)
+        
+    if profile_data.display_name is not None:
+        account.display_name = profile_data.display_name
+        
+    if profile_data.phone_number is not None:
+        account.phone_number = profile_data.phone_number
+        
+    if profile_data.dob is not None:
+        account.dob = validate_and_format_dob(profile_data.dob)
+        
+    db.commit()
+    db.refresh(account)
+    return account
+
 

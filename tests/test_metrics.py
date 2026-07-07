@@ -5,12 +5,35 @@ import time
 from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 
+from settings.config import settings
+# Setup test environment before importing database modules
+settings.database_url = "sqlite:///./test.db"
+
+from database.db import Base, SessionLocal, engine
+from database.models_db import User, Account
 from utils.metrics import log_metric, calculate_metrics, read_metrics_records, REDIS_METRICS_KEY
 from main import app
 
 class TestMetrics(unittest.TestCase):
 
+    @classmethod
+    def setUpClass(cls):
+        Base.metadata.create_all(bind=engine)
+
+    @classmethod
+    def tearDownClass(cls):
+        Base.metadata.drop_all(bind=engine)
+
     def setUp(self):
+        # Clear tables
+        db = SessionLocal()
+        try:
+            db.query(User).delete()
+            db.query(Account).delete()
+            db.commit()
+        finally:
+            db.close()
+
         # Mock Redis store in memory
         self.redis_store = {}
         self.mock_redis = MagicMock()
@@ -113,15 +136,38 @@ class TestMetrics(unittest.TestCase):
             
         client = TestClient(app)
         
-        # Check summary endpoint
+        # Check summary and raw endpoints fail without auth (401)
         response = client.get("/metrics/summary")
+        self.assertEqual(response.status_code, 401)
+        response = client.get("/metrics/raw?limit=10")
+        self.assertEqual(response.status_code, 401)
+
+        # Register a test user
+        reg_payload = {
+            "username": "metricstester",
+            "email": "metrics@example.com",
+            "password": "metricspassword"
+        }
+        client.post("/auth/register", json=reg_payload)
+
+        # Login to get access token
+        login_payload = {
+            "username": "metricstester",
+            "password": "metricspassword"
+        }
+        login_response = client.post("/auth/login", json=login_payload)
+        token = login_response.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+
+        # Check summary endpoint with auth
+        response = client.get("/metrics/summary", headers=headers)
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(data["queue_depth"], 2)
         self.assertEqual(data["last_5_min"]["total_requests"], 1)
         
-        # Check raw endpoint
-        response = client.get("/metrics/raw?limit=10")
+        # Check raw endpoint with auth
+        response = client.get("/metrics/raw?limit=10", headers=headers)
         self.assertEqual(response.status_code, 200)
         raw_data = response.json()
         self.assertEqual(len(raw_data), 1)

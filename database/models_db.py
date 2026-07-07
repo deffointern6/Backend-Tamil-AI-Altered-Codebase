@@ -1,6 +1,7 @@
 import uuid
 import datetime
 from sqlalchemy import Column, String, JSON, DateTime, Boolean, ForeignKey
+from sqlalchemy.orm import relationship
 from database.db import Base
 
 class RefreshToken(Base):
@@ -24,16 +25,23 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
 
+    account = relationship("Account", back_populates="user", uselist=False, cascade="all, delete-orphan")
+
 
 class Account(Base):
     __tablename__ = "accounts"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    username = Column(String, nullable=False)
+    email = Column(String, nullable=False)
     display_name = Column(String, nullable=True)
     phone_number = Column(String, nullable=True)
+    dob = Column(String, nullable=True)  # Format: dd/mm/yyyy
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+    user = relationship("User", back_populates="account")
 
 
 class Job(Base):

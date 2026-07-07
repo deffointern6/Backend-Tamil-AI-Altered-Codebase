@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import AnyUrl
+from pydantic import AnyUrl, model_validator
 
 class Settings(BaseSettings):
     # Required variable (boot fails instantly if missing from .env or system env)
@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     refresh_token_expire_days: int = 7
     cors_origins: str = "*"
 
+    # DB Connection Pool Config
+    db_pool_size: int = 10
+    db_max_overflow: int = 20
+
     # RunPod Serverless (optional — only needed when RunPod fallback is enabled)
     runpod_api_key: str = ""
     
@@ -24,6 +28,13 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         case_sensitive=False
         )
+
+    @model_validator(mode="after")
+    def validate_production_secrets(self) -> "Settings":
+        if self.environment.lower() == "production":
+            if self.jwt_secret_key == "super-secret-tamil-ai-key-change-in-production":
+                raise ValueError("JWT_SECRET_KEY must be changed to a secure random value in production!")
+        return self
 
 # Create a singleton instance to be used across the app
 settings = Settings()
