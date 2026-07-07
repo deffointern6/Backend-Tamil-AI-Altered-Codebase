@@ -2,7 +2,7 @@ import logging
 import requests
 from abc import ABC, abstractmethod
 from gradio_client import Client as GradioClient
-from tenacity import retry, stop_after_attempt, wait_fixed
+from tenacity import retry, stop_after_attempt, wait_fixed, wait_exponential
 
 import sys
 from pathlib import Path
@@ -39,8 +39,12 @@ class HuggingFaceSpaceAdapter(ModelAdapter):
                 f"Initialization failed for {space_id}: {str(e)}"
             )
 
-    # Retry 3 times with 2s delay
-    @retry(stop=stop_after_attempt(3), wait=wait_fixed(2))
+    # Retry 4 times with exponential backoff (e.g., wait 5s, 10s, 20s, up to 30s)
+    @retry(
+        stop=stop_after_attempt(4), 
+        wait=wait_exponential(multiplier=2, min=5, max=30),
+        reraise=True
+    )
     def _predict(self, payload: dict):
         return self.client.predict(**payload, api_name=self.api_name)
 
