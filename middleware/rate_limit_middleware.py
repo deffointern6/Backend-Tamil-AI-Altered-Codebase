@@ -15,14 +15,14 @@ except Exception as e:
 
 # Model-specific rate limits defined as (limit, window_seconds)
 MODEL_RATE_LIMITS = {
-    "letter-gen": (8, 60),          # Heavy generation
-    "email-gen": (12, 60),          # Medium
-    "paraphrase-gen": (10, 60),     # Medium-heavy
-    "tongue-twister": (30, 60),     # Very light
-    "poem-gen": (8, 60),            # Generation
-    "mcq-gen": (6, 60),             # Heavy processing
-    "proofreader": (25, 60),        # Usually fast
-    "default": (10, 60)
+    "letter-gen": (30, 60),          # Heavy generation
+    "email-gen": (40, 60),           # Medium
+    "paraphrase-gen": (30, 60),      # Medium-heavy
+    "tongue-twister": (100, 60),     # Very light
+    "poem-gen": (30, 60),            # Generation
+    "mcq-gen": (20, 60),             # Heavy processing
+    "proofreader": (100, 60),        # Usually fast
+    "default": (30, 60)
 }
 
 def check_rate_limit(user_id: str, model_name: str):

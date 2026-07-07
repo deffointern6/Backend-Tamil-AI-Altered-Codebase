@@ -115,11 +115,11 @@ def run_model(
         Job.user_id == current_user.id,
         Job.status.in_(["queued", "running"])
     ).count()
-    if active_jobs >= 3:
+    if active_jobs >= 10:
         logger.warning(f"[JOB SUBMIT] User '{current_user.username}' exceeded concurrent job limit (active: {active_jobs}).")
         raise HTTPException(
             status_code=429,
-            detail="Maximum concurrent jobs limit reached. Please wait for your other jobs to finish."
+            detail="Maximum concurrent jobs limit reached (limit: 10). Please wait for your other jobs to finish."
         )
 
     try:

@@ -162,10 +162,10 @@ class TestAsyncJobs(unittest.TestCase):
         self.assertIn("limit", data["detail"][0]["msg"])
 
     def test_post_job_exceeds_user_concurrency_limit(self):
-        # Create 3 active jobs in DB for the test user
+        # Create 10 active jobs in DB for the test user
         db = SessionLocal()
         try:
-            for _ in range(3):
+            for _ in range(10):
                 job = Job(
                     user_id=self.test_user.id,
                     model="letter-gen",
@@ -177,10 +177,10 @@ class TestAsyncJobs(unittest.TestCase):
         finally:
             db.close()
             
-        # Now submit a 4th job
+        # Now submit an 11th job
         payload = {
             "model": "letter-gen",
-            "input": "fourth job input"
+            "input": "eleventh job input"
         }
         response = self.client.post("/jobs", json=payload, headers=self.headers)
         self.assertEqual(response.status_code, 429)

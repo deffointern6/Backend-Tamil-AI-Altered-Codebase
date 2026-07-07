@@ -147,7 +147,7 @@ class TestAuthAndMiddleware(unittest.TestCase):
         from unittest.mock import patch, MagicMock
         mock_redis = MagicMock()
         mock_pipe = MagicMock()
-        mock_pipe.execute.return_value = [0, 1, 16, True]  # 16 exceeds the 15 limit
+        mock_pipe.execute.return_value = [0, 1, 35, True]  # 35 exceeds the 30 limit
         mock_redis.pipeline.return_value = mock_pipe
 
         with patch("middleware.rate_limit_middleware.redis_conn", mock_redis):
