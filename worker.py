@@ -1,4 +1,13 @@
 import logging
+import sys
+
+# Configure stdout logging immediately on import so boot/preload logs are visible in the console
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    stream=sys.stdout
+)
+
 import time
 from database.jobs import get_job, update_job
 from services.registry import get_model, LIVE_TEXT_SPACES
