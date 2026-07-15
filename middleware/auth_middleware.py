@@ -13,6 +13,7 @@ PUBLIC_PREFIXES = [
     "/docs",
     "/openapi.json",
     "/redoc",
+    "/test-hf-live",
 ]
 
 class AuthMiddleware(BaseHTTPMiddleware):
