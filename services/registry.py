@@ -119,17 +119,25 @@ def get_model(model_name: str):
     adapter = None
     if model_name in LIVE_TEXT_SPACES:
         config = LIVE_TEXT_SPACES[model_name]
+        
+        # Resolve target host (Local URL or remote HF Space)
+        if getattr(settings, "use_local_models", False):
+            port = settings.local_model_ports.get(model_name)
+            target_source = f"http://localhost:{port}"
+        else:
+            target_source = config["space"]
+
         if model_name == "letter-gen":
-            adapter = LetterGenAdapter(config["space"], settings.hf_token)
+            adapter = LetterGenAdapter(target_source, settings.hf_token)
         elif model_name == "email-gen":
-            adapter = EmailGenAdapter(config["space"], settings.hf_token)
+            adapter = EmailGenAdapter(target_source, settings.hf_token)
         elif model_name == "proofreader":
-            adapter = ProofreaderAdapter(config["space"], settings.hf_token)
+            adapter = ProofreaderAdapter(target_source, settings.hf_token)
         elif model_name == "mcq-gen":
-            adapter = MCQGenAdapter(config["space"], settings.hf_token)
+            adapter = MCQGenAdapter(target_source, settings.hf_token)
         else:
             adapter = HuggingFaceSpaceAdapter(
-                config["space"], config["api"], settings.hf_token, config["input"]
+                target_source, config["api"], settings.hf_token, config["input"]
             )
 
         # Wrap with RunPod fallback if endpoint is configured
