@@ -21,6 +21,18 @@ class Settings(BaseSettings):
 
     # RunPod Serverless (optional — only needed when RunPod fallback is enabled)
     runpod_api_key: str = ""
+
+    # Local Model Settings
+    use_local_models: bool = False
+    local_model_ports: dict = {
+        "letter-gen": 7860,
+        "paraphrase-gen": 7861,
+        "mcq-gen": 7862,
+        "tongue-twister": 7863,
+        "poem-gen": 7864,
+        "email-gen": 7865,
+        "proofreader": 7866,
+    }
     
     # Automatically read from a local .env configuration file
     model_config = SettingsConfigDict(
