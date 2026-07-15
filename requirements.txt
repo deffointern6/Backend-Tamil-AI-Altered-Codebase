@@ -13,3 +13,5 @@ rq
 PyJWT
 bcrypt
 python-multipart
+torch
+transformers
