@@ -303,10 +303,14 @@ class ProofreaderAdapter(ModelAdapter):
         self.space_id = space_id
         self.token = token
         
-        # Subdomain of hxari/tamil-spell-checker is hxari-tamil-spell-checker
-        subdomain = self.space_id.replace("/", "-").replace("_", "-").lower()
-        self.api_url = f"https://{subdomain}.hf.space/check"
-        logger.info(f"[INIT] ProofreaderAdapter initialized for remote Space: {self.api_url}")
+        if space_id.startswith("http://") or space_id.startswith("https://"):
+            self.api_url = f"{space_id.rstrip('/')}/check"
+        else:
+            # Subdomain of hxari/tamil-spell-checker is hxari-tamil-spell-checker
+            subdomain = self.space_id.replace("/", "-").replace("_", "-").lower()
+            self.api_url = f"https://{subdomain}.hf.space/check"
+            
+        logger.info(f"[INIT] ProofreaderAdapter initialized: {self.api_url}")
 
     def run(self, text_input: Any):
         word = ""
