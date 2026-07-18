@@ -129,16 +129,56 @@ rq worker default
 ```
 
 ### Running Tests
-Execute unit tests using unittest:
+Execute unit tests using pytest:
 ```bash
-python -m unittest discover tests
+PYTHONPATH=. venv/bin/pytest tests/
+```
+
+---
+
+## Hardening & Security Features
+
+The backend includes built-in security features to protect service availability and access:
+1. **Endpoint Authorization on `/metrics/*`**:
+   - Access to `/metrics/summary` and `/metrics/raw` is restricted to administrator accounts (`is_admin = True` column in the `users` table).
+   - Standard authenticated tokens receive a `403 Forbidden` response.
+2. **IP-based Auth Rate Limiting**:
+   - To protect registration and login endpoints from brute-force/spamming, IP-based rate limiting is enforced via Redis:
+     - `/auth/register`: Max 10 registration requests per minute per IP.
+     - `/auth/login` and `/auth/token`: Max 20 login attempts per minute per IP.
+     - Rate-limiting fails open gracefully if Redis is temporarily unreachable.
+3. **Automatic Schema Upgrades**:
+   - The application dynamically verifies and applies missing database migrations (such as adding the `is_admin` column to the `users` table) on startup.
+
+---
+
+## Smoke & Load Testing
+
+### 1. End-to-End Smoke Test
+Run the smoke test to verify liveness, metadata validation, rate limiting, and cross-user job ownership isolation rules (User B cannot access User A's jobs) on a running server:
+```bash
+# Run against local server (port 8001)
+PYTHONPATH=. venv/bin/python scripts/smoke_test.py --host http://localhost:8001
+
+# Run against production/staging server
+PYTHONPATH=. venv/bin/python scripts/smoke_test.py --host https://your-production-domain.com
+```
+
+### 2. Load Testing (Locust)
+Simulate realistic multi-user load testing against the enqueuing and inference pipelines:
+```bash
+# Start Locust web UI (opens http://localhost:8089)
+locust -f scripts/locustfile.py --host http://localhost:8001
+
+# Run headless load test (10 concurrent users, spawn rate 5/sec, for 5 minutes)
+locust -f scripts/locustfile.py --host http://localhost:8001 --users 10 --spawn-rate 5 --run-time 5m --headless
 ```
 
 ---
 
 ## Deployment Health Verification
 
-To check the health of the system during or after a deployment:
+To check telemetry or health aggregates during or after a deployment:
 
 ### 1. Check Metrics via CLI
 Run the helper script:
@@ -147,8 +187,8 @@ python check_metrics.py
 ```
 This prints the queue depth, error rates, and latency averages across all sliding windows.
 
-### 2. Check Metrics via HTTP
-Curl the summary endpoint to inspect health parameters automatically:
+### 2. Check Metrics via HTTP (Admin Token Required)
+Curl the summary endpoint with an authorized admin bearer token:
 ```bash
-curl http://localhost:8000/metrics/summary
+curl -H "Authorization: Bearer <ADMIN_TOKEN>" http://localhost:8001/metrics/summary
 ```
