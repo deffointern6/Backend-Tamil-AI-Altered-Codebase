@@ -47,7 +47,7 @@ for name in "${!PORT_MAP[@]}"; do
         cd "$dir"
         
         # Run app.py in background, redirecting stdout/stderr to log files
-        GRADIO_SERVER_PORT=$port GRADIO_SERVER_NAME="127.0.0.1" "$PYTHON_CMD" app.py > "$BASE_DIR/$name.log" 2>&1 &
+        PORT=$port GRADIO_SERVER_PORT=$port GRADIO_SERVER_NAME="127.0.0.1" "$PYTHON_CMD" app.py > "$BASE_DIR/$name.log" 2>&1 &
         
         cd - > /dev/null
     else
