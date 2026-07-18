@@ -150,7 +150,38 @@ def main():
             
             if status == "done":
                 completed = True
-                log_success(f"Job '{model}' completed. Output: {str(status_data.get('result'))[:80]}...")
+                result_data = status_data.get("result")
+                log_success(f"Job '{model}' completed. Output: {str(result_data)[:80]}...")
+                
+                # If model is mcq-gen, perform Phase 4b: Submit answers to verify correction logic
+                if model == "mcq-gen":
+                    print("Testing MCQ Answer Evaluation API...")
+                    if not isinstance(result_data, list) or len(result_data) == 0:
+                        log_fail("MCQ result is empty or not a list")
+                    
+                    # Extract the correct answer for the first question
+                    first_correct_ans = result_data[0].get("answer", "")
+                    
+                    # We will submit a mock answers dictionary: {0: correct_ans, 1: "Wrong Option"}
+                    eval_payload = {
+                        "answers": {
+                            "0": first_correct_ans,
+                            "1": "தவறான விடை"  # Incorrect option
+                        }
+                    }
+                    
+                    eval_r = requests.post(f"{HOST}/jobs/{job_id}/evaluate", json=eval_payload, headers=headers)
+                    if eval_r.status_code != 200:
+                        log_fail(f"MCQ Evaluation failed: {eval_r.status_code} - {eval_r.text}")
+                    
+                    eval_data = eval_r.json()
+                    score = eval_data.get("score")
+                    total = eval_data.get("total_questions")
+                    evaluation = eval_data.get("evaluation")
+                    
+                    log_success(f"MCQ Evaluated: Score={score}/{total}, First Correct={evaluation[0]['is_correct']}, Second Correct={evaluation[1]['is_correct']}")
+                    if score < 1:
+                        log_fail("Evaluation score calculation is incorrect")
                 break
             elif status == "failed":
                 log_fail(f"Job '{model}' failed on worker: {status_data.get('error')}")
