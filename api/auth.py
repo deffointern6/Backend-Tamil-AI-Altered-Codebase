@@ -1,6 +1,6 @@
 import re
 from datetime import datetime, timedelta
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -10,6 +10,7 @@ from auth.hash import hash_password, verify_password
 from auth.jwt import create_access_token, generate_refresh_token
 from auth.dependencies import get_current_user
 from settings.config import settings
+from middleware.rate_limit_middleware import check_auth_rate_limit
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -78,7 +79,10 @@ def create_and_save_refresh_token(user_id: str, db: Session) -> str:
 
 # --- REGISTER ROUTE ---
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-def register_user(request: UserRegister, db: Session = Depends(get_db)):
+def register_user(request: UserRegister, http_request: Request, db: Session = Depends(get_db)):
+    # Enforce registration rate limits by client IP
+    check_auth_rate_limit(http_request.client.host, http_request.url.path)
+
     # Check if username exists
     existing_username = db.query(User).filter(User.username == request.username).first()
     if existing_username:
@@ -124,7 +128,10 @@ def register_user(request: UserRegister, db: Session = Depends(get_db)):
 
 # --- JSON-BASED LOGIN ROUTE ---
 @router.post("/login", response_model=TokenResponse)
-def login_user(request: UserLogin, db: Session = Depends(get_db)):
+def login_user(request: UserLogin, http_request: Request, db: Session = Depends(get_db)):
+    # Enforce login rate limits by client IP
+    check_auth_rate_limit(http_request.client.host, http_request.url.path)
+
     # Find user by username or email
     user = db.query(User).filter(
         (User.username == request.username) | (User.email == request.username)
@@ -155,7 +162,10 @@ def login_user(request: UserLogin, db: Session = Depends(get_db)):
 
 # --- OAUTH2 FORM-BASED LOGIN ROUTE (For Swagger /docs Authorize button) ---
 @router.post("/token", response_model=TokenResponse)
-def login_for_oauth2_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+def login_for_oauth2_token(http_request: Request, form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    # Enforce OAuth2 login rate limits by client IP
+    check_auth_rate_limit(http_request.client.host, http_request.url.path)
+
     user = db.query(User).filter(
         (User.username == form_data.username) | (User.email == form_data.username)
     ).first()

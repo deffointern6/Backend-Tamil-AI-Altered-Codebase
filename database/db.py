@@ -60,6 +60,16 @@ def upgrade_db_schema():
                 conn.execute(text("ALTER TABLE accounts ADD COLUMN dob VARCHAR"))
             conn.commit()
 
+    if "users" in inspector.get_table_names():
+        existing_cols = [c["name"] for c in inspector.get_columns("users")]
+        with engine.connect() as conn:
+            # Check and add is_admin
+            if "is_admin" not in existing_cols:
+                # Add is_admin column as BOOLEAN with a default value of False
+                # Handles sqlite/postgres compatibility
+                conn.execute(text("ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT FALSE"))
+            conn.commit()
+
 # Run the upgrade schema routine
 upgrade_db_schema()
 

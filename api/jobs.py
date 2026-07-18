@@ -93,6 +93,10 @@ class JobRequest(BaseModel):
         return self
 
 
+# --- QUEUE BACK-PRESSURE CONFIGURATION ---
+MAX_QUEUE_DEPTH = 50  # Reject new jobs when the queue has this many pending items
+
+
 # --- POST ROUTE ---
 @router.post("")
 def run_model(
@@ -109,6 +113,21 @@ def run_model(
     if request.model not in LIVE_TEXT_SPACES:
         logger.warning(f"[JOB SUBMIT] Model '{request.model}' not found in registry.")
         raise HTTPException(status_code=404, detail=f"Model '{request.model}' not found")
+
+    # Back-pressure: reject requests when the job queue is overloaded
+    try:
+        queue_depth = len(high_queue) + len(default_queue)
+        if queue_depth >= MAX_QUEUE_DEPTH:
+            logger.warning(f"[JOB SUBMIT] Queue depth {queue_depth} exceeds limit {MAX_QUEUE_DEPTH}. Rejecting request.")
+            raise HTTPException(
+                status_code=503,
+                detail=f"Server is busy processing {queue_depth} pending jobs. Please retry in a few seconds."
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        # Fail-open: if we can't check queue depth (Redis issue), allow the request through
+        logger.error(f"[JOB SUBMIT] Failed to check queue depth: {e}")
 
     # Enforce maximum concurrent active jobs per user
     active_jobs = db.query(Job).filter(
@@ -168,4 +187,96 @@ def get_job_status(job_id: str, db: Session = Depends(get_db), current_user: Use
         "status": job.status,
         "result": job.result,
         "error": job.error
+    }
+
+
+# --- MCQ EVALUATION ---
+class MCQAnswerSubmission(BaseModel):
+    answers: Any
+
+
+@router.post("/{job_id}/evaluate")
+def evaluate_mcq_answers(
+    job_id: str,
+    request: MCQAnswerSubmission,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    logger.info(f"[MCQ EVALUATE] Evaluating answers for job {job_id} by user {current_user.username}")
+    job = get_job(job_id, db=db)
+    if not job:
+        logger.warning(f"[MCQ EVALUATE] Job {job_id} not found in database.")
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if job.user_id != current_user.id:
+        logger.warning(f"[MCQ EVALUATE] User {current_user.id} unauthorized to access job {job_id}")
+        raise HTTPException(status_code=403, detail="Not authorized to access this job")
+
+    if job.model != "mcq-gen":
+        raise HTTPException(status_code=400, detail="Only mcq-gen jobs can be evaluated")
+
+    if job.status != "done":
+        raise HTTPException(status_code=400, detail=f"Job is not completed yet (current status: {job.status})")
+
+    if not isinstance(job.result, list):
+        raise HTTPException(status_code=500, detail="MCQ job result is not in the correct format")
+
+    parsed_answers = {}
+    raw_answers = request.answers
+
+    if isinstance(raw_answers, list):
+        for idx, item in enumerate(raw_answers):
+            if isinstance(item, str):
+                parsed_answers[idx] = item
+            elif isinstance(item, dict):
+                q_idx = item.get("question_index")
+                sel_opt = item.get("selected_option")
+                if q_idx is not None and sel_opt is not None:
+                    try:
+                        parsed_answers[int(q_idx)] = str(sel_opt)
+                    except (ValueError, TypeError):
+                        raise HTTPException(status_code=422, detail=f"Invalid question_index: {q_idx}")
+                else:
+                    raise HTTPException(status_code=422, detail="Each item in answers list must contain 'question_index' and 'selected_option'")
+            else:
+                raise HTTPException(status_code=422, detail="Answers list must contain only strings or objects")
+    elif isinstance(raw_answers, dict):
+        for k, v in raw_answers.items():
+            try:
+                parsed_answers[int(k)] = str(v)
+            except (ValueError, TypeError):
+                raise HTTPException(status_code=422, detail=f"Invalid dictionary key (must be integer index): {k}")
+    else:
+        raise HTTPException(status_code=422, detail="Answers must be a list or a dictionary")
+
+    evaluation = []
+    score = 0
+    total_questions = len(job.result)
+
+    for idx, mcq in enumerate(job.result):
+        question_text = mcq.get("question", "")
+        correct_answer = mcq.get("answer", "")
+        
+        selected_option = parsed_answers.get(idx)
+        if selected_option is not None:
+            is_correct = (str(selected_option).strip() == str(correct_answer).strip())
+        else:
+            is_correct = False
+            
+        if is_correct:
+            score += 1
+            
+        evaluation.append({
+            "question_index": idx,
+            "question": question_text,
+            "selected_option": selected_option,
+            "correct_answer": correct_answer,
+            "is_correct": is_correct
+        })
+
+    return {
+        "job_id": job.id,
+        "score": score,
+        "total_questions": total_questions,
+        "evaluation": evaluation
     }
