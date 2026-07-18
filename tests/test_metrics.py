@@ -159,14 +159,33 @@ class TestMetrics(unittest.TestCase):
         token = login_response.json()["access_token"]
         headers = {"Authorization": f"Bearer {token}"}
 
-        # Check summary endpoint with auth
+        # Check summary endpoint with auth for regular user (non-admin should get 403)
+        response = client.get("/metrics/summary", headers=headers)
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json()["detail"], "Access forbidden: Administrator privileges required.")
+        
+        # Check raw endpoint with auth for regular user (non-admin should get 403)
+        response = client.get("/metrics/raw?limit=10", headers=headers)
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json()["detail"], "Access forbidden: Administrator privileges required.")
+
+        # Promote user to admin in the test database
+        db = SessionLocal()
+        try:
+            db_user = db.query(User).filter(User.username == "metricstester").first()
+            db_user.is_admin = True
+            db.commit()
+        finally:
+            db.close()
+
+        # Check summary endpoint with auth for admin user (should get 200)
         response = client.get("/metrics/summary", headers=headers)
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(data["queue_depth"], 2)
         self.assertEqual(data["last_5_min"]["total_requests"], 1)
         
-        # Check raw endpoint with auth
+        # Check raw endpoint with auth for admin user (should get 200)
         response = client.get("/metrics/raw?limit=10", headers=headers)
         self.assertEqual(response.status_code, 200)
         raw_data = response.json()

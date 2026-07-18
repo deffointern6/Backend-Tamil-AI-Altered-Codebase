@@ -66,3 +66,54 @@ def check_rate_limit(user_id: str, model_name: str):
         logger.error(f"Rate limiter Redis error: {e}")
         return
 
+
+def check_auth_rate_limit(ip_address: str, route_path: str):
+    """
+    Enforces IP-based rate limits on auth routes (/register, /login, /token) using Redis.
+    - Register: max 10 attempts per minute per IP.
+    - Login/Token: max 20 attempts per minute per IP.
+    If Redis is unavailable, rate limiting is skipped (fail-open).
+    """
+    if redis_conn is None:
+        return
+
+    # Route specific limits (limit, window_seconds)
+    if "register" in route_path.lower():
+        limit, window_seconds = 10, 60
+        route_name = "registration"
+    else:
+        limit, window_seconds = 20, 60
+        route_name = "login"
+
+    key = f"rate_limit:ip:{ip_address}:auth:{route_name}"
+    now = time.time()
+    clear_before = now - window_seconds
+
+    try:
+        # Sliding window counter using Redis sorted sets
+        pipe = redis_conn.pipeline()
+        pipe.zremrangebyscore(key, 0, clear_before)
+        pipe.zadd(key, {str(now): now})
+        pipe.zcard(key)
+        pipe.expire(key, window_seconds)
+        
+        # Execute pipeline
+        _, _, current_count, _ = pipe.execute()
+        
+        if current_count > limit:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail={
+                    "error": "Rate limit exceeded",
+                    "message": f"Maximum {limit} {route_name} attempts allowed per {window_seconds} seconds.",
+                    "retry_after": int(window_seconds - (now - clear_before))
+                }
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        # Fail-open
+        logger.error(f"Auth rate limiter Redis error: {e}")
+        return
+
+

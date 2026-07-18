@@ -24,19 +24,28 @@ class HuggingFaceSpaceAdapter(ModelAdapter):
         self.space_id = space_id
         self.api_name = api_name
         self.input_param_name = input_param_name
+        self.token = token
+        self.client = None
 
+        # Try to pre-initialize to save first-request latency,
+        # but don't crash the worker if the target isn't ready yet.
         try:
-            # gradio_client's default httpx timeout (~5s) is too short for HF
-            # Spaces that are asleep/cold-starting; extend it so init survives
-            # the wake-up/JWT round trip instead of raising ReadTimeout.
             self.client = GradioClient(
                 self.space_id, token=token, httpx_kwargs={"timeout": 60}
             )
-            logger.info(f"[INIT] HF Space client initialized: {space_id}")
+            logger.info(f"[INIT] HF Space client pre-initialized: {space_id}")
         except Exception as e:
-            logger.exception("Failed to initialize HF Space client")
-            raise RuntimeError(
-                f"Initialization failed for {space_id}: {str(e)}"
+            logger.warning(
+                f"[INIT] HF Space client pre-init failed for {space_id} "
+                f"(will retry lazily on first request): {e}"
+            )
+
+    def _ensure_client(self):
+        """Lazily initialize the GradioClient if it wasn't ready at boot."""
+        if self.client is None:
+            logger.info(f"[LAZY INIT] Initializing client for space: {self.space_id}")
+            self.client = GradioClient(
+                self.space_id, token=self.token, httpx_kwargs={"timeout": 60}
             )
 
     # Retry 4 times with exponential backoff (e.g., wait 5s, 10s, 20s, up to 30s)
@@ -49,6 +58,8 @@ class HuggingFaceSpaceAdapter(ModelAdapter):
         return self.client.predict(**payload, api_name=self.api_name)
 
     def run(self, text_input: Any):
+        self._ensure_client()
+
         if isinstance(text_input, dict):
             payload = text_input
         else:

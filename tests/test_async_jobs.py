@@ -188,5 +188,185 @@ class TestAsyncJobs(unittest.TestCase):
         self.assertIn("detail", data)
         self.assertIn("Maximum concurrent jobs limit reached", data["detail"])
 
+    def test_evaluate_mcq_success_list_strings(self):
+        db = SessionLocal()
+        try:
+            job = Job(
+                user_id=self.test_user.id,
+                model="mcq-gen",
+                status="done",
+                input="dummy input",
+                result=[
+                    {"question": "Q1", "options": ["A", "B"], "answer": "A"},
+                    {"question": "Q2", "options": ["C", "D"], "answer": "D"}
+                ]
+            )
+            db.add(job)
+            db.commit()
+            job_id = job.id
+        finally:
+            db.close()
+
+        payload = {"answers": ["A", "C"]} # 1 correct, 1 incorrect
+        response = self.client.post(f"/jobs/{job_id}/evaluate", json=payload, headers=self.headers)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["job_id"], job_id)
+        self.assertEqual(data["score"], 1)
+        self.assertEqual(data["total_questions"], 2)
+        self.assertEqual(len(data["evaluation"]), 2)
+        self.assertEqual(data["evaluation"][0]["is_correct"], True)
+        self.assertEqual(data["evaluation"][1]["is_correct"], False)
+
+    def test_evaluate_mcq_success_list_dicts(self):
+        db = SessionLocal()
+        try:
+            job = Job(
+                user_id=self.test_user.id,
+                model="mcq-gen",
+                status="done",
+                input="dummy input",
+                result=[
+                    {"question": "Q1", "options": ["A", "B"], "answer": "A"}
+                ]
+            )
+            db.add(job)
+            db.commit()
+            job_id = job.id
+        finally:
+            db.close()
+
+        payload = {
+            "answers": [
+                {"question_index": 0, "selected_option": "A"}
+            ]
+        }
+        response = self.client.post(f"/jobs/{job_id}/evaluate", json=payload, headers=self.headers)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["score"], 1)
+        self.assertEqual(data["evaluation"][0]["selected_option"], "A")
+
+    def test_evaluate_mcq_success_dict(self):
+        db = SessionLocal()
+        try:
+            job = Job(
+                user_id=self.test_user.id,
+                model="mcq-gen",
+                status="done",
+                input="dummy input",
+                result=[
+                    {"question": "Q1", "options": ["A", "B"], "answer": "A"}
+                ]
+            )
+            db.add(job)
+            db.commit()
+            job_id = job.id
+        finally:
+            db.close()
+
+        payload = {
+            "answers": {"0": "B"}
+        }
+        response = self.client.post(f"/jobs/{job_id}/evaluate", json=payload, headers=self.headers)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["score"], 0)
+        self.assertEqual(data["evaluation"][0]["is_correct"], False)
+
+    def test_evaluate_mcq_unanswered_questions(self):
+        db = SessionLocal()
+        try:
+            job = Job(
+                user_id=self.test_user.id,
+                model="mcq-gen",
+                status="done",
+                input="dummy input",
+                result=[
+                    {"question": "Q1", "options": ["A", "B"], "answer": "A"},
+                    {"question": "Q2", "options": ["C", "D"], "answer": "D"}
+                ]
+            )
+            db.add(job)
+            db.commit()
+            job_id = job.id
+        finally:
+            db.close()
+
+        payload = {"answers": ["A"]}  # only 1 answer provided
+        response = self.client.post(f"/jobs/{job_id}/evaluate", json=payload, headers=self.headers)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["score"], 1)
+        self.assertEqual(data["evaluation"][1]["selected_option"], None)
+        self.assertEqual(data["evaluation"][1]["is_correct"], False)
+
+    def test_evaluate_mcq_job_not_found(self):
+        payload = {"answers": ["A"]}
+        response = self.client.post("/jobs/nonexistent-uuid/evaluate", json=payload, headers=self.headers)
+        self.assertEqual(response.status_code, 404)
+
+    def test_evaluate_mcq_unauthorized(self):
+        db = SessionLocal()
+        try:
+            job = Job(
+                user_id="other-user-id",
+                model="mcq-gen",
+                status="done",
+                input="dummy input",
+                result=[{"question": "Q1", "options": ["A", "B"], "answer": "A"}]
+            )
+            db.add(job)
+            db.commit()
+            job_id = job.id
+        finally:
+            db.close()
+
+        payload = {"answers": ["A"]}
+        response = self.client.post(f"/jobs/{job_id}/evaluate", json=payload, headers=self.headers)
+        self.assertEqual(response.status_code, 403)
+
+    def test_evaluate_mcq_wrong_model(self):
+        db = SessionLocal()
+        try:
+            job = Job(
+                user_id=self.test_user.id,
+                model="letter-gen",
+                status="done",
+                input="dummy input",
+                result={"letter": "some letter"}
+            )
+            db.add(job)
+            db.commit()
+            job_id = job.id
+        finally:
+            db.close()
+
+        payload = {"answers": ["A"]}
+        response = self.client.post(f"/jobs/{job_id}/evaluate", json=payload, headers=self.headers)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Only mcq-gen jobs can be evaluated", response.json()["detail"])
+
+    def test_evaluate_mcq_not_done(self):
+        db = SessionLocal()
+        try:
+            job = Job(
+                user_id=self.test_user.id,
+                model="mcq-gen",
+                status="running",
+                input="dummy input",
+                result=None
+            )
+            db.add(job)
+            db.commit()
+            job_id = job.id
+        finally:
+            db.close()
+
+        payload = {"answers": ["A"]}
+        response = self.client.post(f"/jobs/{job_id}/evaluate", json=payload, headers=self.headers)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Job is not completed yet", response.json()["detail"])
+
 if __name__ == '__main__':
     unittest.main()

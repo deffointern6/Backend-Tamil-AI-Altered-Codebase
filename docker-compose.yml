@@ -4,11 +4,13 @@ services:
   redis:
     image: redis:7-alpine
     container_name: tamil_ai_redis
-    command: redis-server --appendonly yes
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
     ports:
       - "6379:6379"
     volumes:
       - redis_data:/data
+    mem_limit: 512m
+    memswap_limit: 512m
     restart: always
 
   api:
@@ -23,6 +25,8 @@ services:
       - REDIS_URL=redis://redis:6379/0
     depends_on:
       - redis
+    mem_limit: 2g
+    memswap_limit: 2g
     restart: always
 
   high-worker:
@@ -34,6 +38,8 @@ services:
       - REDIS_URL=redis://redis:6379/0
     depends_on:
       - redis
+    mem_limit: 1g
+    memswap_limit: 1g
     restart: always
 
   default-worker-1:
@@ -45,6 +51,8 @@ services:
       - REDIS_URL=redis://redis:6379/0
     depends_on:
       - redis
+    mem_limit: 1g
+    memswap_limit: 1g
     restart: always
 
   default-worker-2:
@@ -56,6 +64,8 @@ services:
       - REDIS_URL=redis://redis:6379/0
     depends_on:
       - redis
+    mem_limit: 1g
+    memswap_limit: 1g
     restart: always
 
   default-worker-3:
@@ -67,7 +77,10 @@ services:
       - REDIS_URL=redis://redis:6379/0
     depends_on:
       - redis
+    mem_limit: 1g
+    memswap_limit: 1g
     restart: always
 
 volumes:
   redis_data:
+
