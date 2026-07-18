@@ -4,17 +4,25 @@ from starlette.responses import Response, JSONResponse
 from auth.jwt import decode_access_token
 from database.db import SessionLocal
 from database.models_db import User
+from settings.config import settings
 
 # Routes that do NOT require authentication
-PUBLIC_PREFIXES = [
-    "/auth",
-    "/health",
-    "/models",
-    "/docs",
-    "/openapi.json",
-    "/redoc",
-    "/test-hf-live",
-]
+if settings.environment.lower() != "production":
+    PUBLIC_PREFIXES = [
+        "/auth",
+        "/health",
+        "/models",
+        "/docs",
+        "/openapi.json",
+        "/redoc",
+        "/test-hf-live",
+    ]
+else:
+    PUBLIC_PREFIXES = [
+        "/auth",
+        "/health",
+        "/models",  # if safe
+    ]
 
 class AuthMiddleware(BaseHTTPMiddleware):
     """
