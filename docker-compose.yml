@@ -5,8 +5,7 @@ services:
     image: redis:7-alpine
     container_name: tamil_ai_redis
     command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
-    ports:
-      - "6379:6379"
+    network_mode: host
     volumes:
       - redis_data:/data
     mem_limit: 512m
@@ -17,12 +16,11 @@ services:
     build: .
     container_name: tamil_ai_api
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --workers 2
-    ports:
-      - "8000:8000"
+    network_mode: host
     env_file:
       - .env
     environment:
-      - REDIS_URL=redis://redis:6379/0
+      - REDIS_URL=redis://localhost:6379/0
     depends_on:
       - redis
     mem_limit: 2g
@@ -32,10 +30,11 @@ services:
   high-worker:
     build: .
     command: rq worker high --max-jobs 100
+    network_mode: host
     env_file:
       - .env
     environment:
-      - REDIS_URL=redis://redis:6379/0
+      - REDIS_URL=redis://localhost:6379/0
     depends_on:
       - redis
     mem_limit: 1g
@@ -45,10 +44,11 @@ services:
   default-worker-1:
     build: .
     command: rq worker default --max-jobs 100
+    network_mode: host
     env_file:
       - .env
     environment:
-      - REDIS_URL=redis://redis:6379/0
+      - REDIS_URL=redis://localhost:6379/0
     depends_on:
       - redis
     mem_limit: 1g
@@ -58,10 +58,11 @@ services:
   default-worker-2:
     build: .
     command: rq worker default --max-jobs 100
+    network_mode: host
     env_file:
       - .env
     environment:
-      - REDIS_URL=redis://redis:6379/0
+      - REDIS_URL=redis://localhost:6379/0
     depends_on:
       - redis
     mem_limit: 1g
@@ -71,10 +72,11 @@ services:
   default-worker-3:
     build: .
     command: rq worker default --max-jobs 100
+    network_mode: host
     env_file:
       - .env
     environment:
-      - REDIS_URL=redis://redis:6379/0
+      - REDIS_URL=redis://localhost:6379/0
     depends_on:
       - redis
     mem_limit: 1g
@@ -83,4 +85,3 @@ services:
 
 volumes:
   redis_data:
-
