@@ -31,3 +31,6 @@ Thumbs.db
 # Test databases
 test.db
 *.db
+
+# Local model files (downloaded via scripts/download_spaces.py)
+local_spaces/
