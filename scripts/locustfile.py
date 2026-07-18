@@ -36,9 +36,12 @@ DEFAULT_TEST_PASSWORD = "LocustTest@123"
 # /jobs and /test-hf-live, which just adds noise to the report rather than
 # telling you anything about real performance.
 AVAILABLE_MODELS = [
-    "mcq-gen",
-    "email-gen",
     "letter-gen",
+    "paraphrase-gen",
+    "mcq-gen",
+    "tongue-twister",
+    "poem-gen",
+    "email-gen",
     "proofreader",
 ]
 
@@ -110,14 +113,20 @@ class TamilAIUser(HttpUser):
     # ── Lifecycle ──────────────────────────────────────────────────
 
     def on_start(self):
-        """Register a fresh user and log in to obtain auth tokens."""
+        """Register a fresh user and log in to obtain auth tokens, or reuse a static token."""
+        import os
+        self.access_token = os.environ.get("TEST_JWT_TOKEN")
+        self.refresh_token = None
+        self.submitted_job_ids = []  # Track jobs for polling
+
+        if self.access_token:
+            logger.info("Using static TEST_JWT_TOKEN for load testing (bypassing auth rate-limiting)")
+            return
+
         suffix = _random_suffix()
         self.username = f"{DEFAULT_TEST_USER_PREFIX}{suffix}"
         self.email = f"{self.username}@locusttest.dev"
         self.password = DEFAULT_TEST_PASSWORD
-        self.access_token = None
-        self.refresh_token = None
-        self.submitted_job_ids = []  # Track jobs for polling
 
         self._register()
         self._login()
@@ -341,6 +350,7 @@ class TamilAIUser(HttpUser):
 
         with self.client.post(
             "/test-hf-live",
+            headers=self._auth_headers(),
             json={"model": model, "user_text": user_text},
             name=f"/test-hf-live ({model})",
             catch_response=True,
