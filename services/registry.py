@@ -123,7 +123,7 @@ def get_model(model_name: str):
         # Resolve target host (Local URL or remote HF Space)
         if getattr(settings, "use_local_models", False):
             port = settings.local_model_ports.get(model_name)
-            target_source = f"http://localhost:{port}"
+            target_source = f"http://127.0.0.1:{port}"
         else:
             target_source = config["space"]
 

@@ -20,6 +20,12 @@ PORT_MAP=(
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 BASE_DIR="$SCRIPT_DIR/../local_spaces"
 
+# Load environment variables from .env if present to authenticate HF downloads
+if [ -f "$SCRIPT_DIR/../.env" ]; then
+    echo "Loading environment variables from .env..."
+    export $(grep -v '^#' "$SCRIPT_DIR/../.env" | xargs)
+fi
+
 # Find python command from venv or .venv
 VENV_PYTHON=""
 if [ -f "$SCRIPT_DIR/../venv/bin/python" ]; then
