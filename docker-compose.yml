@@ -101,8 +101,6 @@ services:
     volumes:
       - ./local_spaces:/app/local_spaces
       - /root/.cache:/root/.cache
-    mem_limit: 1.5g
-    memswap_limit: 2g
     restart: always
 
   model-paraphrase-gen:
@@ -122,8 +120,6 @@ services:
     volumes:
       - ./local_spaces:/app/local_spaces
       - /root/.cache:/root/.cache
-    mem_limit: 1.5g
-    memswap_limit: 2g
     restart: always
 
   model-mcq-gen:
@@ -143,8 +139,6 @@ services:
     volumes:
       - ./local_spaces:/app/local_spaces
       - /root/.cache:/root/.cache
-    mem_limit: 1.5g
-    memswap_limit: 2g
     restart: always
 
   model-tongue-twister:
@@ -164,8 +158,6 @@ services:
     volumes:
       - ./local_spaces:/app/local_spaces
       - /root/.cache:/root/.cache
-    mem_limit: 1.5g
-    memswap_limit: 2g
     restart: always
 
   model-poem-gen:
@@ -185,8 +177,6 @@ services:
     volumes:
       - ./local_spaces:/app/local_spaces
       - /root/.cache:/root/.cache
-    mem_limit: 1.5g
-    memswap_limit: 2g
     restart: always
 
   model-email-gen:
@@ -206,8 +196,6 @@ services:
     volumes:
       - ./local_spaces:/app/local_spaces
       - /root/.cache:/root/.cache
-    mem_limit: 1.5g
-    memswap_limit: 2g
     restart: always
 
   model-proofreader:
@@ -227,8 +215,6 @@ services:
     volumes:
       - ./local_spaces:/app/local_spaces
       - /root/.cache:/root/.cache
-    mem_limit: 1.5g
-    memswap_limit: 2g
     restart: always
 
 volumes:
