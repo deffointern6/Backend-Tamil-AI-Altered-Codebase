@@ -14,4 +14,8 @@ PyJWT
 bcrypt
 python-multipart
 torch
-transformers
+transformers
+gradio
+scikit-learn
+stanza
+sentencepiece
