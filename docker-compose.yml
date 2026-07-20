@@ -83,5 +83,153 @@ services:
     memswap_limit: 1g
     restart: always
 
+  # --- Local Model Space Servers ---
+  model-letter-gen:
+    build: .
+    container_name: tamil_ai_model_letter_gen
+    working_dir: /app/local_spaces/letter-gen
+    command: python app.py
+    network_mode: host
+    env_file:
+      - .env
+    environment:
+      - PORT=7860
+      - GRADIO_SERVER_PORT=7860
+      - GRADIO_SERVER_NAME=127.0.0.1
+      - OMP_NUM_THREADS=2
+      - MKL_NUM_THREADS=2
+    volumes:
+      - ./local_spaces:/app/local_spaces
+      - /root/.cache:/root/.cache
+    mem_limit: 1.5g
+    memswap_limit: 2g
+    restart: always
+
+  model-paraphrase-gen:
+    build: .
+    container_name: tamil_ai_model_paraphrase_gen
+    working_dir: /app/local_spaces/paraphrase-gen
+    command: python app.py
+    network_mode: host
+    env_file:
+      - .env
+    environment:
+      - PORT=7861
+      - GRADIO_SERVER_PORT=7861
+      - GRADIO_SERVER_NAME=127.0.0.1
+      - OMP_NUM_THREADS=2
+      - MKL_NUM_THREADS=2
+    volumes:
+      - ./local_spaces:/app/local_spaces
+      - /root/.cache:/root/.cache
+    mem_limit: 1.5g
+    memswap_limit: 2g
+    restart: always
+
+  model-mcq-gen:
+    build: .
+    container_name: tamil_ai_model_mcq_gen
+    working_dir: /app/local_spaces/mcq-gen
+    command: python app.py
+    network_mode: host
+    env_file:
+      - .env
+    environment:
+      - PORT=7862
+      - GRADIO_SERVER_PORT=7862
+      - GRADIO_SERVER_NAME=127.0.0.1
+      - OMP_NUM_THREADS=2
+      - MKL_NUM_THREADS=2
+    volumes:
+      - ./local_spaces:/app/local_spaces
+      - /root/.cache:/root/.cache
+    mem_limit: 1.5g
+    memswap_limit: 2g
+    restart: always
+
+  model-tongue-twister:
+    build: .
+    container_name: tamil_ai_model_tongue_twister
+    working_dir: /app/local_spaces/tongue-twister
+    command: python app.py
+    network_mode: host
+    env_file:
+      - .env
+    environment:
+      - PORT=7863
+      - GRADIO_SERVER_PORT=7863
+      - GRADIO_SERVER_NAME=127.0.0.1
+      - OMP_NUM_THREADS=2
+      - MKL_NUM_THREADS=2
+    volumes:
+      - ./local_spaces:/app/local_spaces
+      - /root/.cache:/root/.cache
+    mem_limit: 1.5g
+    memswap_limit: 2g
+    restart: always
+
+  model-poem-gen:
+    build: .
+    container_name: tamil_ai_model_poem_gen
+    working_dir: /app/local_spaces/poem-gen
+    command: python app.py
+    network_mode: host
+    env_file:
+      - .env
+    environment:
+      - PORT=7864
+      - GRADIO_SERVER_PORT=7864
+      - GRADIO_SERVER_NAME=127.0.0.1
+      - OMP_NUM_THREADS=2
+      - MKL_NUM_THREADS=2
+    volumes:
+      - ./local_spaces:/app/local_spaces
+      - /root/.cache:/root/.cache
+    mem_limit: 1.5g
+    memswap_limit: 2g
+    restart: always
+
+  model-email-gen:
+    build: .
+    container_name: tamil_ai_model_email_gen
+    working_dir: /app/local_spaces/email-gen
+    command: python app.py
+    network_mode: host
+    env_file:
+      - .env
+    environment:
+      - PORT=7865
+      - GRADIO_SERVER_PORT=7865
+      - GRADIO_SERVER_NAME=127.0.0.1
+      - OMP_NUM_THREADS=2
+      - MKL_NUM_THREADS=2
+    volumes:
+      - ./local_spaces:/app/local_spaces
+      - /root/.cache:/root/.cache
+    mem_limit: 1.5g
+    memswap_limit: 2g
+    restart: always
+
+  model-proofreader:
+    build: .
+    container_name: tamil_ai_model_proofreader
+    working_dir: /app/local_spaces/proofreader
+    command: python app.py
+    network_mode: host
+    env_file:
+      - .env
+    environment:
+      - PORT=7866
+      - GRADIO_SERVER_PORT=7866
+      - GRADIO_SERVER_NAME=127.0.0.1
+      - OMP_NUM_THREADS=2
+      - MKL_NUM_THREADS=2
+    volumes:
+      - ./local_spaces:/app/local_spaces
+      - /root/.cache:/root/.cache
+    mem_limit: 1.5g
+    memswap_limit: 2g
+    restart: always
+
 volumes:
   redis_data:
