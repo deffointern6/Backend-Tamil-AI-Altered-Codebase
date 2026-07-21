@@ -14,6 +14,17 @@ from services.adapters import (
 _MODEL_CACHE = {}
 _model_lock = Lock() 
 
+MODEL_CHAR_LIMITS = {
+    "letter-gen": 1000,
+    "email-gen": 1000,
+    "poem-gen": 500,
+    "tongue-twister": 200,
+    "paraphrase-gen": 5000,
+    "mcq-gen": 3000,
+    "proofreader": 5000,
+    "default": 1000
+}
+
 
 LIVE_TEXT_SPACES = {
     "letter-gen": {
@@ -161,14 +172,14 @@ def list_models():
     # HuggingFace Spaces
     for name, config in LIVE_TEXT_SPACES.items():
         has_fallback = name in RUNPOD_ENDPOINTS and bool(settings.runpod_api_key)
+        limit = MODEL_CHAR_LIMITS.get(name, MODEL_CHAR_LIMITS["default"])
         models.append({
             "name": name,
             "type": "text",
             "source": "hf-space",
             "fallback": "runpod" if has_fallback else None,
-            "description": config["description"]
+            "description": config["description"],
+            "character_limit": limit
         })
-
-
 
     return models

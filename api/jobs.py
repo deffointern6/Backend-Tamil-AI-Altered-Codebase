@@ -7,7 +7,7 @@ from settings.config import settings
 from database.jobs import create_job, get_job
 from database.db import get_db
 from sqlalchemy.orm import Session
-from services.registry import LIVE_TEXT_SPACES
+from services.registry import LIVE_TEXT_SPACES, MODEL_CHAR_LIMITS
 from typing import Any
 from auth.dependencies import get_current_user
 from database.models_db import User, Job
@@ -21,19 +21,6 @@ redis_url = settings.redis_url if settings.redis_url else "redis://localhost:637
 redis_conn = Redis.from_url(redis_url)
 high_queue = Queue("high", connection=redis_conn)
 default_queue = Queue("default", connection=redis_conn)
-
-
-# --- CHARACTER LIMITS CONFIGURATION ---
-MODEL_CHAR_LIMITS = {
-    "letter-gen": 1000,
-    "email-gen": 1000,
-    "poem-gen": 500,
-    "tongue-twister": 200,
-    "paraphrase-gen": 5000,
-    "mcq-gen": 3000,
-    "proofreader": 5000,
-    "default": 1000
-}
 
 def clean_whitespace(val: Any) -> Any:
     if isinstance(val, str):
