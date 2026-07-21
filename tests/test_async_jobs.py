@@ -155,11 +155,11 @@ class TestAsyncJobs(unittest.TestCase):
             "input": "a" * 201  # Limit is 200
         }
         response = self.client.post("/jobs", json=payload, headers=self.headers)
-        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.status_code, 413)
         # Verify validation message contains the limit error
         data = response.json()
         self.assertIn("detail", data)
-        self.assertIn("limit", data["detail"][0]["msg"])
+        self.assertIn("limit", data["detail"])
 
     def test_post_job_exceeds_user_concurrency_limit(self):
         # Create 10 active jobs in DB for the test user

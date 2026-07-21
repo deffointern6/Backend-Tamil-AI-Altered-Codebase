@@ -23,10 +23,22 @@ app = FastAPI(
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     body = await request.body()
-    logger.error("422 Validation Error")
+    logger.error("Validation Error (422 / 413)")
     logger.error("Path: %s", request.url.path)
     logger.error("Body: %s", body.decode("utf-8", errors="replace"))
     logger.error("Errors: %s", exc.errors())
+    
+    # Extract friendly validation errors
+    for error in exc.errors():
+        msg = error.get("msg", "")
+        # If the input exceeds model character limit, return 413 Payload Too Large
+        if "exceeds the maximum limit" in msg:
+            clean_msg = msg.split("Value error, ")[-1] if "Value error, " in msg else msg
+            return JSONResponse(
+                status_code=413,
+                content={"detail": clean_msg}
+            )
+            
     return JSONResponse(
         status_code=422,
         content={"detail": exc.errors()},
