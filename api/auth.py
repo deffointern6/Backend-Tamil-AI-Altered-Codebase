@@ -4,6 +4,9 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, Field, AliasChoices, ConfigDict
 from sqlalchemy.orm import Session
+import logging
+
+logger = logging.getLogger(__name__)
 from database.db import get_db
 from database.models_db import User, RefreshToken, Account
 from auth.hash import hash_password, verify_password
@@ -335,11 +338,17 @@ def get_account_profile(
 
 
 @router.put("/account", response_model=AccountProfileResponse)
-def update_account_profile(
+async def update_account_profile(
+    request: Request,
     profile_data: AccountProfileUpdate,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    try:
+        raw_body = await request.json()
+        logger.info(f"[PROFILE UPDATE RAW PAYLOAD]: {raw_body}")
+    except Exception as e:
+        logger.error(f"[PROFILE UPDATE RAW PAYLOAD ERROR]: {e}")
     account = db.query(Account).filter(Account.user_id == current_user.id).first()
     if not account:
         account = Account(
