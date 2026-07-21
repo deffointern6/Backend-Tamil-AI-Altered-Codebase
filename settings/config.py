@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     database_url: AnyUrl
     redis_url: str = "redis://localhost:6379/0"
     environment: str = "development"
+    firebase_project_id: str = "tamil-ai-backend"
     
     # JWT Configuration
     jwt_secret_key: str = "super-secret-tamil-ai-key-change-in-production"

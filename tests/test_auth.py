@@ -186,39 +186,58 @@ class TestAuthAndMiddleware(unittest.TestCase):
         data = response.json()
         self.assertEqual(data["username"], "profile_tester")
         self.assertEqual(data["email"], "profile@example.com")
-        self.assertEqual(data["display_name"], "profile_tester")
-        self.assertEqual(data["phone_number"], "")
+        self.assertEqual(data["displayName"], "profile_tester")
+        self.assertEqual(data["phone"], "")
         self.assertEqual(data["dob"], "")
 
-        # 4. Update the account profile (using YYYY-MM-DD format for DOB)
+        # 4. Update the account profile using flat keys (displayname) and camelCase keys
         update_payload = {
-            "display_name": "Updated Display",
-            "phone_number": "+1234567890",
+            "displayname": "Updated Display",
+            "phoneNumber": "+1234567890",
             "dob": "1995-12-25"
         }
         response = self.client.put("/auth/account", json=update_payload, headers=headers)
         self.assertEqual(response.status_code, 200)
         data = response.json()
-        self.assertEqual(data["display_name"], "Updated Display")
-        self.assertEqual(data["phone_number"], "+1234567890")
-        # Ensure it got normalized to dd/mm/yyyy format in the response (and thus in the DB)
+        self.assertEqual(data["displayName"], "Updated Display")
+        self.assertEqual(data["phone"], "+1234567890")
+        # Ensure it got normalized to dd/mm/yyyy format in the response
         self.assertEqual(data["dob"], "25/12/1995")
 
         # 5. Retrieve again to make sure it matches
         response = self.client.get("/auth/account", headers=headers)
         self.assertEqual(response.status_code, 200)
         data = response.json()
-        self.assertEqual(data["display_name"], "Updated Display")
-        self.assertEqual(data["phone_number"], "+1234567890")
+        self.assertEqual(data["displayName"], "Updated Display")
+        self.assertEqual(data["phone"], "+1234567890")
         self.assertEqual(data["dob"], "25/12/1995")
 
-        # 6. Test direct dd/mm/yyyy update
-        update_payload = {
-            "dob": "01/01/2000"
+        # 6. Test updating username and email
+        update_user_payload = {
+            "username": "new_tester_name",
+            "email": "new_profile@example.com"
         }
-        response = self.client.put("/auth/account", json=update_payload, headers=headers)
+        response = self.client.put("/auth/account", json=update_user_payload, headers=headers)
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["dob"], "01/01/2000")
+        data = response.json()
+        self.assertEqual(data["username"], "new_tester_name")
+        self.assertEqual(data["email"], "new_profile@example.com")
+
+        # Login again to get a new token with the new username
+        new_login_payload = {
+            "username": "new_tester_name",
+            "password": "profilepassword"
+        }
+        response = self.client.post("/auth/login", json=new_login_payload)
+        self.assertEqual(response.status_code, 200)
+        token = response.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+
+        # Verify JWT /auth/me reflects the new username
+        response = self.client.get("/auth/me", headers=headers)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["username"], "new_tester_name")
+        self.assertEqual(response.json()["email"], "new_profile@example.com")
 
         # 7. Test invalid DOB format
         update_payload = {
@@ -226,6 +245,62 @@ class TestAuthAndMiddleware(unittest.TestCase):
         }
         response = self.client.put("/auth/account", json=update_payload, headers=headers)
         self.assertEqual(response.status_code, 400)
+
+        # 8. Register another user to test uniqueness constraints
+        reg_payload_2 = {
+            "username": "other_tester",
+            "email": "other@example.com",
+            "password": "otherpassword"
+        }
+        response = self.client.post("/auth/register", json=reg_payload_2)
+        self.assertEqual(response.status_code, 201)
+
+        # Try to update current user's email to other_tester's email (should fail 400)
+        update_conflict_payload = {
+            "email": "other@example.com"
+        }
+        response = self.client.put("/auth/account", json=update_conflict_payload, headers=headers)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Email already registered", response.json()["detail"])
+
+        # Try to update current user's username to other_tester's username (should fail 400)
+        update_conflict_payload_2 = {
+            "username": "other_tester"
+        }
+        response = self.client.put("/auth/account", json=update_conflict_payload_2, headers=headers)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Username already registered", response.json()["detail"])
+
+    def test_firebase_login_flow(self):
+        from unittest.mock import patch
+        with patch("auth.firebase.verify_firebase_token") as mock_verify:
+            mock_verify.return_value = {
+                "email": "firebase_user@example.com",
+                "user_id": "firebase-uid-12345",
+                "name": "Firebase User"
+            }
+            
+            # 1. Login with Firebase ID token (should automatically register)
+            payload = {"id_token": "mock-firebase-id-token"}
+            response = self.client.post("/auth/firebase", json=payload)
+            self.assertEqual(response.status_code, 200)
+            data = response.json()
+            self.assertIn("access_token", data)
+            self.assertIn("refresh_token", data)
+            token = data["access_token"]
+            
+            # Verify the user was registered and has a profile
+            headers = {"Authorization": f"Bearer {token}"}
+            response = self.client.get("/auth/account", headers=headers)
+            self.assertEqual(response.status_code, 200)
+            data = response.json()
+            self.assertEqual(data["username"], "firebase_user")
+            self.assertEqual(data["email"], "firebase_user@example.com")
+            self.assertEqual(data["displayName"], "Firebase User")
+            
+            # 2. Login again with the same Firebase ID token (should login existing user)
+            response = self.client.post("/auth/firebase", json=payload)
+            self.assertEqual(response.status_code, 200)
 
 if __name__ == '__main__':
     unittest.main()

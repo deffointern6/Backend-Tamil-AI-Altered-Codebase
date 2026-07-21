@@ -2,7 +2,7 @@ import re
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, AliasChoices, ConfigDict
 from sqlalchemy.orm import Session
 from database.db import get_db
 from database.models_db import User, RefreshToken, Account
@@ -32,31 +32,63 @@ class TokenResponse(BaseModel):
 class RefreshRequest(BaseModel):
     refresh_token: str
 
+class FirebaseLoginRequest(BaseModel):
+    id_token: str
+
 class UserResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     username: str
     email: str
     is_active: bool
 
-    class Config:
-        from_attributes = True
-
 
 class AccountProfileResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
     username: str
     email: str
-    display_name: str | None = None
-    phone_number: str | None = None
-    dob: str | None = None
-
-    class Config:
-        from_attributes = True
+    display_name: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("displayname", "displayName", "display_name"),
+        serialization_alias="displayName"
+    )
+    phone_number: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("phone_number", "phoneNumber", "phone"),
+        serialization_alias="phone"
+    )
+    dob: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("dob", "dateOfBirth", "date_of_birth"),
+        serialization_alias="dob"
+    )
 
 
 class AccountProfileUpdate(BaseModel):
-    display_name: str | None = None
-    phone_number: str | None = None
-    dob: str | None = None
+    model_config = ConfigDict(populate_by_name=True)
+
+    username: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("username", "userName")
+    )
+    email: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("email", "emailAddress")
+    )
+    display_name: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("displayname", "displayName", "display_name")
+    )
+    phone_number: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("phone_number", "phoneNumber", "phone")
+    )
+    dob: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("dob", "dateOfBirth", "date_of_birth")
+    )
 
 
 # --- HELPER FUNCTIONS ---
@@ -322,6 +354,28 @@ def update_account_profile(
         db.commit()
         db.refresh(account)
         
+    # Check and update username (across User and Account tables)
+    if profile_data.username is not None and profile_data.username != current_user.username:
+        existing_username = db.query(User).filter(User.username == profile_data.username).first()
+        if existing_username:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Username already registered"
+            )
+        current_user.username = profile_data.username
+        account.username = profile_data.username
+
+    # Check and update email (across User and Account tables)
+    if profile_data.email is not None and profile_data.email != current_user.email:
+        existing_email = db.query(User).filter(User.email == profile_data.email).first()
+        if existing_email:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email already registered"
+            )
+        current_user.email = profile_data.email
+        account.email = profile_data.email
+
     if profile_data.display_name is not None:
         account.display_name = profile_data.display_name
         
@@ -333,6 +387,88 @@ def update_account_profile(
         
     db.commit()
     db.refresh(account)
+    db.refresh(current_user)
     return account
+
+
+@router.post("/firebase", response_model=TokenResponse)
+def login_with_firebase(
+    request: FirebaseLoginRequest,
+    db: Session = Depends(get_db)
+):
+    # 1. Verify the Firebase ID Token using helper
+    from auth.firebase import verify_firebase_token
+    payload = verify_firebase_token(request.id_token)
+    
+    # 2. Extract user details
+    email = payload.get("email")
+    name = payload.get("name") or email.split("@")[0]
+    
+    if not email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Firebase ID Token does not contain a valid email."
+        )
+
+    # 3. Check if user already exists
+    user = db.query(User).filter(User.email == email).first()
+    
+    if not user:
+        # Generate a unique username
+        base_username = re.sub(r'[^a-zA-Z0-9_]', '', email.split("@")[0]).lower()
+        username = base_username
+        counter = 1
+        while db.query(User).filter(User.username == username).first() is not None:
+            username = f"{base_username}{counter}"
+            counter += 1
+            
+        import secrets
+        random_pwd = secrets.token_urlsafe(32)
+        hashed = hash_password(random_pwd)
+        
+        user = User(
+            username=username,
+            email=email,
+            hashed_password=hashed
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        
+        # Create account record
+        account = Account(
+            user_id=user.id,
+            username=user.username,
+            email=user.email,
+            display_name=name,
+            phone_number="",
+            dob=""
+        )
+        db.add(account)
+        db.commit()
+    else:
+        # Create default profile if missing
+        account = db.query(Account).filter(Account.user_id == user.id).first()
+        if not account:
+            account = Account(
+                user_id=user.id,
+                username=user.username,
+                email=user.email,
+                display_name=user.username,
+                phone_number="",
+                dob=""
+            )
+            db.add(account)
+            db.commit()
+
+    # 4. Generate JWT tokens
+    access_token = create_access_token(data={"sub": user.username})
+    refresh_token = create_and_save_refresh_token(user.id, db)
+    
+    return {
+        "access_token": access_token, 
+        "refresh_token": refresh_token,
+        "token_type": "bearer"
+    }
 
 

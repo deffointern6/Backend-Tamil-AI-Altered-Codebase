@@ -18,4 +18,6 @@ transformers
 gradio
 scikit-learn
 stanza
-sentencepiece
+sentencepiece
+google-auth
+cryptography

@@ -55,6 +55,12 @@ def upgrade_db_schema():
             # Check and add email
             if "email" not in existing_cols:
                 conn.execute(text("ALTER TABLE accounts ADD COLUMN email VARCHAR"))
+            # Check and add display_name
+            if "display_name" not in existing_cols:
+                conn.execute(text("ALTER TABLE accounts ADD COLUMN display_name VARCHAR"))
+            # Check and add phone_number
+            if "phone_number" not in existing_cols:
+                conn.execute(text("ALTER TABLE accounts ADD COLUMN phone_number VARCHAR"))
             # Check and add dob
             if "dob" not in existing_cols:
                 conn.execute(text("ALTER TABLE accounts ADD COLUMN dob VARCHAR"))
