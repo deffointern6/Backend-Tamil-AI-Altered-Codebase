@@ -29,7 +29,7 @@ MODEL_CHAR_LIMITS = {
     "email-gen": 1000,
     "poem-gen": 500,
     "tongue-twister": 200,
-    "paraphrase-gen": 2000,
+    "paraphrase-gen": 5000,
     "mcq-gen": 3000,
     "proofreader": 5000,
     "default": 1000
