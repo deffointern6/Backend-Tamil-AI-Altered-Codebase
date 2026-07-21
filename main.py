@@ -1,5 +1,8 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+import logging
 from services.registry import list_models
 from api.jobs import router as jobs_router
 from api.testing import router as testing_router
@@ -9,11 +12,25 @@ from middleware.auth_middleware import AuthMiddleware
 
 from settings.config import settings
 
+logger = logging.getLogger("main")
+
 app = FastAPI(
     docs_url=None if settings.environment.lower() == "production" else "/docs",
     redoc_url=None if settings.environment.lower() == "production" else "/redoc",
     openapi_url=None if settings.environment.lower() == "production" else "/openapi.json"
 )
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    body = await request.body()
+    logger.error("422 Validation Error")
+    logger.error("Path: %s", request.url.path)
+    logger.error("Body: %s", body.decode("utf-8", errors="replace"))
+    logger.error("Errors: %s", exc.errors())
+    return JSONResponse(
+        status_code=422,
+        content={"detail": exc.errors()},
+    )
 
 @app.on_event("startup")
 def startup_event():
@@ -26,7 +43,7 @@ def startup_event():
         print(f"Startup watchdog cleanup/recovery failed: {e}")
 
 # Configure CORS dynamically so the frontend can interact with this API
-origins = [o.strip().strip("'\"") for o in settings.cors_origins.split(",") if o.strip()] if settings.cors_origins else ["*"]
+origins = [o.strip().strip("'\"").rstrip("/") for o in settings.cors_origins.split(",") if o.strip()] if settings.cors_origins else ["*"]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
